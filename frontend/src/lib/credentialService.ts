@@ -6,6 +6,9 @@ import {
     revokeCredentialOnStellar,
 } from './contracts';
 import { CREDENTIAL_HASH_ALGORITHM, CREDENTIAL_METADATA_SCHEMA_VERSION } from './credentialHash';
+import { buildAcrediaVerifiableCredential, type AcrediaVerifiableCredential } from './verifiableCredential';
+import { validateVerifiableCredential } from './schemas';
+import { runtimeConfig } from './runtimeConfig';
 import { debugLog, captureException, recordMetric } from './debug';
 import { getE2eState, updateE2eState } from './e2e';
 
@@ -33,26 +36,13 @@ export interface CredentialData {
     file: File;
 }
 
-export interface CredentialMetadata {
-    name: string;
-    description: string;
-    image: string;
-    attributes: Array<{
-        trait_type: string;
-        value: string;
-    }>;
-    credentialData: {
-        studentName: string;
-        studentWallet: string;
-        degree: string;
-        major?: string;
-        gpa?: string;
-        issueDate: string;
-        institutionName: string;
-        credentialType: string;
-        subjects?: Subject[];
-    };
-}
+/**
+ * Credential metadata is modeled as a W3C Verifiable Credential / Open
+ * Badges 3.0 JSON-LD document (see verifiableCredential.ts). This alias is
+ * kept so existing imports of `CredentialMetadata` from this module keep
+ * working.
+ */
+export type CredentialMetadata = AcrediaVerifiableCredential;
 
 export type CredentialIssueProgressStep = 'upload-ipfs' | 'sign-transaction' | 'save-database';
 
@@ -120,65 +110,24 @@ export async function issueCredential(
         const fileUrl = getIPFSUrl(fileCID);
         debugLog('Credential file uploaded to IPFS.');
 
-        debugLog('Generating credential metadata.');
-        const metadata: CredentialMetadata = {
-            name: `${data.credentialType} - ${data.studentName}`,
-            description: `Academic credential issued by ${data.institutionName} to ${data.studentName}`,
-            image: fileUrl,
-            attributes: [
-                {
-                    trait_type: 'Credential Type',
-                    value: data.credentialType,
-                },
-                {
-                    trait_type: 'Degree',
-                    value: data.degree,
-                },
-                {
-                    trait_type: 'Institution',
-                    value: data.institutionName,
-                },
-                {
-                    trait_type: 'Issue Date',
-                    value: data.issueDate,
-                },
-                ...(data.major
-                    ? [
-                          {
-                              trait_type: 'Major',
-                              value: data.major,
-                          },
-                      ]
-                    : []),
-                ...(data.gpa
-                    ? [
-                          {
-                              trait_type: 'GPA',
-                              value: data.gpa,
-                          },
-                      ]
-                    : []),
-                ...(data.subjects && data.subjects.length > 0
-                    ? [
-                          {
-                              trait_type: 'Total Subjects',
-                              value: data.subjects.length.toString(),
-                          },
-                      ]
-                    : []),
-            ],
-            credentialData: {
+        debugLog('Generating credential metadata as a W3C VC / Open Badges 3.0 document.');
+        const metadata: CredentialMetadata = buildAcrediaVerifiableCredential(
+            {
                 studentName: data.studentName,
                 studentWallet: data.studentWallet,
                 degree: data.degree,
                 major: data.major,
                 gpa: data.gpa,
                 issueDate: data.issueDate,
-                institutionName: data.institutionName,
                 credentialType: data.credentialType,
+                institutionName: data.institutionName,
+                institutionWallet: data.institutionWallet,
                 subjects: data.subjects,
             },
-        };
+            runtimeConfig.stellar.explorerBaseUrl,
+            fileUrl,
+        );
+        validateVerifiableCredential(metadata);
 
         debugLog('Uploading credential metadata to IPFS.');
         const metadataPath = await uploadJSONToIPFS(metadata);

@@ -39,6 +39,7 @@ test('renders public credential showcase page with verify CTA, QR, LinkedIn, and
     await expect(page.getByRole('link', { name: 'Verify Credential' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'QR Code' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Add to LinkedIn' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'W3C VC (.json)' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open Badges v3' })).toBeVisible();
+    await expect(
+        page.getByRole('button', { name: 'Download Verifiable Credential (.json)' }),
+    ).toBeVisible();
 });

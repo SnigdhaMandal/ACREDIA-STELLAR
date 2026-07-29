@@ -22,6 +22,8 @@ type CredentialRow = {
     ipfs_hash: string;
     blockchain_hash: string;
     metadata: unknown;
+    metadata_schema_version: number | null;
+    hash_algorithm: string | null;
     issued_at: string;
     revoked: boolean;
     institution?: { name?: string }[] | { name?: string } | null;
@@ -89,8 +91,8 @@ export async function GET(request: NextRequest) {
         let query = supabase
             .from('credentials')
             .select(
-                `id, token_id, ipfs_hash, blockchain_hash, metadata, issued_at, revoked,
-                 institution:institutions(name)`,
+                `id, token_id, ipfs_hash, blockchain_hash, metadata, metadata_schema_version, hash_algorithm,
+                 issued_at, revoked, institution:institutions(name)`,
                 { count: 'exact' }
             )
             .eq('student_id', studentRow.id)

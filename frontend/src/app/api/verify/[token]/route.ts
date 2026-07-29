@@ -161,6 +161,7 @@ export async function GET(
                 metadata_schema_version,
                 hash_algorithm,
                 ipfs_hash,
+                blockchain_hash,
                 student_wallet_address,
                 issuer_wallet_address,
                 institution:institutions!credentials_institution_id_fkey (
@@ -263,6 +264,15 @@ export async function GET(
                 degree: credentialData.degree ?? null,
                 major: credentialData.major ?? null,
                 issueDate: credentialData.issueDate ?? null,
+                // Stellar account addresses, not sensitive: already readable
+                // on-chain by anyone who queries this token_id directly.
+                studentWallet: onChain?.student ?? data.student_wallet_address ?? null,
+                institutionWallet: onChain?.issuer ?? data.issuer_wallet_address ?? null,
+                metadataSchemaVersion: data.metadata_schema_version ?? null,
+                hashAlgorithm: data.hash_algorithm ?? null,
+                onChainHash: onChain?.hash ?? null,
+                blockchainHash: data.blockchain_hash ?? null,
+                ipfsHash: data.ipfs_hash ?? null,
             },
             verification: {
                 verified,
