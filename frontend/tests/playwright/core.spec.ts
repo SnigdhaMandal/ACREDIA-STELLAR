@@ -57,6 +57,9 @@ test('registers, issues, verifies, and revokes a credential', async ({ page }) =
     await expect(page.getByRole('heading', { name: 'Credential Verification Report' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Credential Verified ✓' })).toBeVisible();
     await expect(page.getByText('Blockchain Verified')).toBeVisible();
+    // Distinct end-to-end CID ↔ on-chain-hash integrity signal (ACREDIA-STELLAR#163) —
+    // separate from the revoked/verified status above.
+    await expect(page.getByText('Document Integrity: Authentic')).toBeVisible();
 
     await page.goto('/dashboard');
     await page.getByRole('tab', { name: 'View issued' }).click();
@@ -68,6 +71,9 @@ test('registers, issues, verifies, and revokes a credential', async ({ page }) =
     await page.goto('/verify?token=1');
     await expect(page.getByRole('heading', { name: 'Credential Revoked' })).toBeVisible();
     await expect(page.getByText('This credential has been revoked')).toBeVisible();
+    // Revocation and document integrity are independent signals: a revoked
+    // credential's original document can still be untampered.
+    await expect(page.getByText('Document Integrity: Authentic')).toBeVisible();
 });
 
 test('authorizes an issuer from the admin dashboard', async ({ page }) => {

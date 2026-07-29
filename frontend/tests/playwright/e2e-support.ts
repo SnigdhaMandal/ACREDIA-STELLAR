@@ -193,6 +193,9 @@ export async function installE2eRoutes(page: Page) {
                     onChainFound: true,
                     issuerAuthorized: true,
                     issuerStatus: credential.revoked ? 'revoked' : 'active',
+                    // E2E mode has no real IPFS/chain to fetch from — model
+                    // the common happy path (document matches on-chain hash).
+                    integrity: { status: 'match', cidResolved: true },
                 },
             }),
         });

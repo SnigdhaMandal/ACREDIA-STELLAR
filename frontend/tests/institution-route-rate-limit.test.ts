@@ -45,15 +45,6 @@ function supabaseStub() {
         then: undefined as unknown,
     };
 
-    // Credentials route uses { count: 'exact' } select and awaits the query directly.
-    const countChain = {
-        ...chain,
-        // Vitest awaits the object via its promise interface if we add then().
-        // Instead we make the chain itself thenable so `await query` works.
-        // The route destructures { data, error, count } from the resolved value.
-        [Symbol.asyncIterator]: undefined,
-    };
-
     return {
         from: (table: string) => {
             if (table === 'institutions') {

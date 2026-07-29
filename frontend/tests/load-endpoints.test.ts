@@ -40,6 +40,10 @@ vi.mock('../src/lib/ipfsServer', () => ({
     pinJsonToPinata: mockPinJsonToPinata,
     validatePinataFile: vi.fn(() => null),
     validatePinataJson: vi.fn(() => null),
+    fetchJsonFromIpfs: vi.fn(async () => ({
+        ok: true,
+        content: { credentialData: { studentName: 'Ada Lovelace', credentialType: 'diploma' } },
+    })),
 }));
 
 vi.mock('../src/lib/contracts', () => ({

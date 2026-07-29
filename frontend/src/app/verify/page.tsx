@@ -28,6 +28,7 @@ import {
 import Link from 'next/link';
 import { VerificationStateCard } from '@/components/verify/VerificationStateCard';
 import { VerificationSummary } from '@/components/verify/VerificationSummary';
+import { IntegrityStateCard } from '@/components/verify/IntegrityStateCard';
 import { useCredentialVerification } from '@/hooks/useCredentialVerification';
 import { SiteNavbar } from '@/components/marketing/SiteNavbar';
 
@@ -41,6 +42,7 @@ function VerifyContent() {
         credential,
         error,
         verificationStatus,
+        integrityStatus,
         manualToken,
         setManualToken,
         scanMode,
@@ -462,6 +464,14 @@ function VerifyContent() {
                             )}
                         </div>
                     </Card>
+
+                    {/* Document Integrity (CID ↔ on-chain hash) — a distinct
+                        signal from the revoked/not-found status above: it
+                        proves the document actually fetched from IPFS is the
+                        same bytes anchored on-chain. */}
+                    {integrityStatus && (
+                        <IntegrityStateCard status={integrityStatus} />
+                    )}
 
                     {/* Credential Details */}
                     <Card className="p-8 md:p-10 space-y-6 bg-card/90 backdrop-blur shadow-lg">

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { captureException } from './debug';
 
 type RateLimitOptions = {
     windowSeconds: number;
@@ -136,7 +137,7 @@ export function createUpstashRateLimitStore(): RateLimitStore | null {
                 // Degrade gracefully: log and fall back to per-instance memory store.
                 // This means limits may not be globally enforced during an outage, but
                 // legitimate traffic is never blocked by a Redis error.
-                console.error('[rateLimit] Upstash error, falling back to in-memory:', err);
+                captureException(err, { context: 'rateLimit.increment', fallback: 'in-memory' });
                 return fallback.increment(key, windowSeconds);
             }
         },
@@ -180,7 +181,7 @@ export function createUpstashRateLimitStore(): RateLimitStore | null {
                 // Also flush the local fallback store
                 fallback.reset?.();
             } catch (err) {
-                console.error('[rateLimit] Upstash reset error:', err);
+                captureException(err, { context: 'rateLimit.reset' });
                 fallback.reset?.();
             }
         },
