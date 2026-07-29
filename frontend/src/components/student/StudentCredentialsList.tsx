@@ -9,6 +9,7 @@ import {
     Award,
     Building2,
     Calendar,
+    Download,
     ExternalLink,
     GraduationCap,
     QrCode,
@@ -23,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import QRCodeModal from './QRCodeModal';
 import { getIPFSUrl } from '@/lib/ipfs';
+import { buildStandardsExportDocument, downloadJsonFile } from '@/lib/standardsExport';
 import { debugLog, captureException } from '@/lib/debug';
 import { supabase } from '@/lib/supabase';
 
@@ -45,6 +47,8 @@ interface Credential {
             credentialType: string;
         };
     };
+    metadata_schema_version?: number | null;
+    hash_algorithm?: string | null;
     issued_at: string;
     revoked: boolean;
     institution?: { name: string } | null;
@@ -351,11 +355,31 @@ function CredentialCard({ credential }: { credential: Credential }) {
         : null;
 
     const [showQRModal, setShowQRModal] = useState(false);
+    const [downloading, setDownloading] = useState(false);
 
     const handleShare = () => {
         const shareUrl = `${window.location.origin}/verify?token=${credential.token_id}`;
         navigator.clipboard.writeText(shareUrl);
         alert('Share link copied to clipboard!');
+    };
+
+    const handleDownloadVc = async () => {
+        setDownloading(true);
+        try {
+            const document = await buildStandardsExportDocument({
+                tokenId: credential.token_id,
+                metadata: credential.metadata,
+                metadataSchemaVersion: credential.metadata_schema_version,
+                hashAlgorithm: credential.hash_algorithm,
+                blockchainHash: credential.blockchain_hash,
+            });
+            downloadJsonFile(document, `credential-${credential.token_id}-verifiable-credential.json`);
+        } catch (err) {
+            captureException(err, { context: 'StudentCredentialsList_downloadVc' });
+            alert('Failed to build the Verifiable Credential export. Please try again.');
+        } finally {
+            setDownloading(false);
+        }
     };
 
     return (
@@ -420,6 +444,10 @@ function CredentialCard({ credential }: { credential: Credential }) {
                         </Button>
                         <Button onClick={handleShare} variant="outline" size="sm">
                             <Share2 className="mr-1 h-4 w-4" />Copy Link
+                        </Button>
+                        <Button onClick={handleDownloadVc} variant="outline" size="sm" disabled={downloading}>
+                            <Download className="mr-1 h-4 w-4" />
+                            {downloading ? 'Preparing...' : 'Download VC (.json)'}
                         </Button>
                         {ipfsUrl && (
                             <a href={ipfsUrl} target="_blank" rel="noopener noreferrer">
