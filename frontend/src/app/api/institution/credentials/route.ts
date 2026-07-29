@@ -4,13 +4,33 @@ import {
     hasServiceRoleEnv,
     requireAuthenticatedRequest,
 } from '@/lib/serverAuth';
+import { enforceRateLimit } from '@/lib/rateLimit';
 import { structuredLog, captureException } from '@/lib/debug';
+
+// Coarse per-IP guard applied before auth to prevent anonymous floods from
+// driving Supabase token verification on this potentially expensive query.
+const INSTITUTION_CREDENTIALS_IP_LIMIT = {
+    windowSeconds: 60,
+    maxRequests: 30,
+    prefix: 'institution-credentials-ip',
+} as const;
+
+// Tighter per-account quota; institutions browsing their own credential list
+// should not need more than 60 paginated fetches per minute.
+const INSTITUTION_CREDENTIALS_USER_QUOTA = {
+    windowSeconds: 60,
+    maxRequests: 60,
+    prefix: 'institution-credentials-user',
+} as const;
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
     const requestId = request.headers.get('x-request-id') || 'unknown';
     try {
+        const ipRateLimitResponse = await enforceRateLimit(request, INSTITUTION_CREDENTIALS_IP_LIMIT);
+        if (ipRateLimitResponse) return ipRateLimitResponse;
+
         const authCheck = await requireAuthenticatedRequest(request);
         if (!authCheck.ok) {
             return NextResponse.json(
@@ -18,6 +38,12 @@ export async function GET(request: NextRequest) {
                 { status: authCheck.status }
             );
         }
+
+        const userRateLimitResponse = await enforceRateLimit(request, {
+            ...INSTITUTION_CREDENTIALS_USER_QUOTA,
+            identifier: authCheck.userId,
+        });
+        if (userRateLimitResponse) return userRateLimitResponse;
 
         const supabase = hasServiceRoleEnv()
             ? getServiceRoleClient()

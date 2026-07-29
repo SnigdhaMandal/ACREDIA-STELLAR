@@ -4,14 +4,31 @@ import {
     hasServiceRoleEnv,
     requireAuthenticatedRequest,
 } from '@/lib/serverAuth';
+import { enforceRateLimit } from '@/lib/rateLimit';
 import { toCsv } from '@/lib/analyticsAggregation';
 import { captureException, structuredLog } from '@/lib/debug';
+
+// CSV export streams the full credential set; treat it as expensive as analytics.
+const INSTITUTION_EXPORT_IP_LIMIT = {
+    windowSeconds: 60,
+    maxRequests: 10,
+    prefix: 'institution-export-ip',
+} as const;
+
+const INSTITUTION_EXPORT_USER_QUOTA = {
+    windowSeconds: 60,
+    maxRequests: 10,
+    prefix: 'institution-export-user',
+} as const;
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
     const requestId = request.headers.get('x-request-id') ?? 'unknown';
     try {
+        const ipRateLimitResponse = await enforceRateLimit(request, INSTITUTION_EXPORT_IP_LIMIT);
+        if (ipRateLimitResponse) return ipRateLimitResponse;
+
         const authCheck = await requireAuthenticatedRequest(request);
         if (!authCheck.ok) {
             return NextResponse.json(
@@ -19,6 +36,12 @@ export async function GET(request: NextRequest) {
                 { status: authCheck.status },
             );
         }
+
+        const userRateLimitResponse = await enforceRateLimit(request, {
+            ...INSTITUTION_EXPORT_USER_QUOTA,
+            identifier: authCheck.userId,
+        });
+        if (userRateLimitResponse) return userRateLimitResponse;
 
         const supabase = hasServiceRoleEnv()
             ? getServiceRoleClient()

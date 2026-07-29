@@ -4,14 +4,32 @@ import {
     hasServiceRoleEnv,
     requireAuthenticatedRequest,
 } from '@/lib/serverAuth';
+import { enforceRateLimit } from '@/lib/rateLimit';
 import { last12Months, groupByMonth, fillMonths, topVerified } from '@/lib/analyticsAggregation';
 import { captureException, structuredLog } from '@/lib/debug';
+
+// Analytics aggregates the full credential + verification log set for an institution.
+// Each request is relatively expensive, so limits are tighter than the credential list.
+const INSTITUTION_ANALYTICS_IP_LIMIT = {
+    windowSeconds: 60,
+    maxRequests: 20,
+    prefix: 'institution-analytics-ip',
+} as const;
+
+const INSTITUTION_ANALYTICS_USER_QUOTA = {
+    windowSeconds: 60,
+    maxRequests: 20,
+    prefix: 'institution-analytics-user',
+} as const;
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
     const requestId = request.headers.get('x-request-id') ?? 'unknown';
     try {
+        const ipRateLimitResponse = await enforceRateLimit(request, INSTITUTION_ANALYTICS_IP_LIMIT);
+        if (ipRateLimitResponse) return ipRateLimitResponse;
+
         const authCheck = await requireAuthenticatedRequest(request);
         if (!authCheck.ok) {
             return NextResponse.json(
@@ -19,6 +37,12 @@ export async function GET(request: NextRequest) {
                 { status: authCheck.status },
             );
         }
+
+        const userRateLimitResponse = await enforceRateLimit(request, {
+            ...INSTITUTION_ANALYTICS_USER_QUOTA,
+            identifier: authCheck.userId,
+        });
+        if (userRateLimitResponse) return userRateLimitResponse;
 
         const supabase = hasServiceRoleEnv()
             ? getServiceRoleClient()

@@ -89,43 +89,113 @@ export function createInMemoryRateLimitStore(
     };
 }
 
-function createUpstashRateLimitStore(): RateLimitStore | null {
+export function createUpstashRateLimitStore(): RateLimitStore | null {
     const url = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, '');
     const token = process.env.UPSTASH_REDIS_REST_TOKEN;
     if (!url || !token) return null;
 
+    // Capture at store-creation time so a later env mutation cannot change which
+    // endpoint is in use for this store instance.
+    const restUrl = url;
+    const restToken = token;
+
+    // Fallback in-memory store used transparently when Redis is temporarily
+    // unreachable so individual requests are never outright dropped due to an
+    // infrastructure hiccup.
+    const fallback = createInMemoryRateLimitStore();
+
     return {
         async increment(key: string, windowSeconds: number) {
-            const response = await fetch(`${url}/pipeline`, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify([
-                    ['INCR', key],
-                    ['EXPIRE', key, windowSeconds, 'NX'],
-                    ['TTL', key],
-                ]),
-            });
+            try {
+                const response = await fetch(`${restUrl}/pipeline`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${restToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify([
+                        ['INCR', key],
+                        ['EXPIRE', key, windowSeconds, 'NX'],
+                        ['TTL', key],
+                    ]),
+                });
 
-            if (!response.ok) {
-                throw new Error(`Redis rate limit check failed: ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(`Upstash responded ${response.status}`);
+                }
+
+                const [countResult, , ttlResult] = await response.json() as Array<{ result?: unknown }>;
+                const count = Number(countResult?.result ?? 1);
+                const ttl = Number(ttlResult?.result ?? windowSeconds);
+
+                return {
+                    count,
+                    resetAt: Date.now() + Math.max(1, ttl) * 1000,
+                };
+            } catch (err) {
+                // Degrade gracefully: log and fall back to per-instance memory store.
+                // This means limits may not be globally enforced during an outage, but
+                // legitimate traffic is never blocked by a Redis error.
+                console.error('[rateLimit] Upstash error, falling back to in-memory:', err);
+                return fallback.increment(key, windowSeconds);
             }
+        },
+        // Flush all rate-limit keys in the configured Upstash database.
+        // Uses SCAN + DEL to avoid blocking the server with a FLUSHDB.
+        // Intended for test harnesses and ops tooling — not for production hot paths.
+        async reset() {
+            try {
+                let cursor = '0';
+                const keysToDelete: string[] = [];
 
-            const [countResult, , ttlResult] = await response.json() as Array<{ result?: unknown }>;
-            const count = Number(countResult?.result ?? 1);
-            const ttl = Number(ttlResult?.result ?? windowSeconds);
+                do {
+                    const scanResponse = await fetch(`${restUrl}/pipeline`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${restToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify([['SCAN', cursor, 'MATCH', '*', 'COUNT', '100']]),
+                    });
 
-            return {
-                count,
-                resetAt: Date.now() + Math.max(1, ttl) * 1000,
-            };
+                    if (!scanResponse.ok) break;
+
+                    const [scanResult] = await scanResponse.json() as Array<{ result?: [string, string[]] }>;
+                    const [nextCursor, keys] = scanResult?.result ?? ['0', []];
+                    cursor = nextCursor;
+                    keysToDelete.push(...keys);
+                } while (cursor !== '0');
+
+                if (keysToDelete.length > 0) {
+                    await fetch(`${restUrl}/pipeline`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${restToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(keysToDelete.map((k) => ['DEL', k])),
+                    });
+                }
+
+                // Also flush the local fallback store
+                fallback.reset?.();
+            } catch (err) {
+                console.error('[rateLimit] Upstash reset error:', err);
+                fallback.reset?.();
+            }
         },
     };
 }
 
-let activeStore = createUpstashRateLimitStore() ?? createInMemoryRateLimitStore(fixedBuckets);
+let activeStore: RateLimitStore = createUpstashRateLimitStore() ?? createInMemoryRateLimitStore(fixedBuckets);
+
+/**
+ * Re-read the Upstash environment variables and replace the active store.
+ * Useful when env vars are injected after module load (e.g., in test bootstraps).
+ */
+export function reinitRateLimitStore(): void {
+    activeStore = createUpstashRateLimitStore() ?? createInMemoryRateLimitStore(fixedBuckets);
+}
 
 function readEnvOverride(prefix: string | undefined, name: 'WINDOW_SECONDS' | 'MAX_REQUESTS'): number | null {
     if (!prefix) return null;
