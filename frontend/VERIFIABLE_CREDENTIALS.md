@@ -195,8 +195,14 @@ async function verify(document: unknown, onChainHashHex: string): Promise<boolea
 ```
 
 Or, more simply, trust this app's own `GET /api/verify/{token}` endpoint,
-which performs exactly this check server-side and returns
-`verification.onChainMatch` / `verification.verified`.
+which performs exactly steps 2–3 server-side (fetching the document from the
+CID the contract actually points to, not a cached copy) and returns the
+result as `verification.integrity.status` — `'match'`, `'mismatch'`, or
+`'unavailable'` if the CID couldn't be resolved just now. This is distinct
+from `verification.onChainMatch` / `verification.verified`, which check the
+*database's* cached metadata against the chain, not the live IPFS content —
+see `src/app/api/verify/[token]/route.ts`'s `checkIntegrity` and the "Document
+Integrity" card on `/verify`.
 
 ### Legacy (schema v1) credentials
 

@@ -12,6 +12,7 @@ const {
     mockVerificationLogInsert,
     mockSupabaseMaybeSingle,
     mockRequireAdminRequest,
+    mockFetchJsonFromIpfs,
 } = vi.hoisted(() => ({
     mockIssueCredentialOnStellar: vi.fn(),
     mockGetServiceRoleClient: vi.fn(),
@@ -21,6 +22,7 @@ const {
     mockVerificationLogInsert: vi.fn(),
     mockSupabaseMaybeSingle: vi.fn(),
     mockRequireAdminRequest: vi.fn(),
+    mockFetchJsonFromIpfs: vi.fn(),
 }));
 
 // Mock IPFS methods
@@ -28,6 +30,14 @@ vi.mock('../src/lib/ipfs', () => ({
     uploadToIPFS: vi.fn(async () => 'mocked-file-cid'),
     uploadJSONToIPFS: vi.fn(async () => 'mocked-metadata-path'),
     getIPFSUrl: vi.fn((cid) => `ipfs://${cid}`),
+}));
+
+// Mock the server-side IPFS gateway fetch used by the verify route's
+// end-to-end integrity check (ACREDIA-STELLAR#163). Each verify-route test
+// below sets this to resolve with the same content it expects the CID to
+// hold, so the integrity check's outcome matches what that test is probing.
+vi.mock('../src/lib/ipfsServer', () => ({
+    fetchJsonFromIpfs: mockFetchJsonFromIpfs,
 }));
 
 // Mock Stellar/Freighter contracts
@@ -250,6 +260,7 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
         });
 
         mockIsRevoked.mockResolvedValue(false);
+        mockFetchJsonFromIpfs.mockResolvedValue({ ok: true, content: dbMetadata });
 
         // Call verify route
         const req = new NextRequest('http://localhost:3000/api/verify/123');
@@ -260,6 +271,7 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
         expect(payload.success).toBe(true);
         expect(payload.verification.verified).toBe(true);
         expect(payload.verification.onChainMatch).toBe(true);
+        expect(payload.verification.integrity).toEqual({ status: 'match', cidResolved: true });
         expectVerificationLog('verified', 'cred-001');
     });
 
@@ -303,6 +315,7 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
 
         // Revoked on-chain!
         mockIsRevoked.mockResolvedValue(true);
+        mockFetchJsonFromIpfs.mockResolvedValue({ ok: true, content: dbMetadata });
 
         const req = new NextRequest('http://localhost:3000/api/verify/123');
         const response = await GET(req, { params: Promise.resolve({ token: '123' }) });
@@ -312,6 +325,9 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
         expect(payload.success).toBe(true);
         expect(payload.verification.verified).toBe(false); // Revoked credential is not verified
         expect(payload.verification.revoked).toBe(true);
+        // Revocation is orthogonal to document integrity: the document
+        // itself hasn't been tampered with, only invalidated by the issuer.
+        expect(payload.verification.integrity).toEqual({ status: 'match', cidResolved: true });
         expectVerificationLog('revoked', 'cred-001');
     });
 
@@ -370,6 +386,10 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
         });
 
         mockIsRevoked.mockResolvedValue(false);
+        // The IPFS-hosted content is the real (untampered) metadata — but the
+        // on-chain hash itself was tampered/replaced, so recomputing from the
+        // fetched document still won't match it.
+        mockFetchJsonFromIpfs.mockResolvedValue({ ok: true, content: dbMetadata });
 
         const req = new NextRequest('http://localhost:3000/api/verify/123');
         const response = await GET(req, { params: Promise.resolve({ token: '123' }) });
@@ -379,15 +399,67 @@ describe('Academic Credential E2E Integration / Lifecycle', () => {
         expect(payload.success).toBe(true);
         expect(payload.verification.verified).toBe(false); // Tampered hash means not verified
         expect(payload.verification.onChainMatch).toBe(false);
+        expect(payload.verification.integrity).toEqual({ status: 'mismatch', cidResolved: true });
         expect(payload.verification).not.toHaveProperty('checks');
         expectVerificationLog('mismatch', 'cred-001');
         expect(mockVerificationLogInsert).toHaveBeenCalledWith(
             expect.objectContaining({
                 verification_result: expect.objectContaining({
-                    mismatch_reasons: expect.arrayContaining(['hash']),
+                    mismatch_reasons: expect.arrayContaining(['hash', 'ipfs_integrity']),
+                    integrity: { status: 'mismatch', cidResolved: true },
                 }),
             }),
         );
+    });
+
+    // ── 6b. VERIFICATION INTEGRITY UNAVAILABLE ────────────────────────────────
+    it('reports integrity as unavailable when the IPFS CID cannot be resolved', async () => {
+        const dbMetadata = {
+            credentialData: {
+                studentName: 'Alice Smith',
+                credentialType: 'diploma',
+            },
+        };
+
+        const expectedHash = await generateCanonicalCredentialHash(dbMetadata);
+
+        mockVerifyRouteClient({
+            data: {
+                id: 'cred-001',
+                token_id: '123',
+                issued_at: '2026-05-31T09:00:00Z',
+                revoked: false,
+                revoked_at: null,
+                metadata: dbMetadata,
+                metadata_schema_version: CREDENTIAL_METADATA_SCHEMA_VERSION,
+                hash_algorithm: CREDENTIAL_HASH_ALGORITHM,
+                ipfs_hash: 'mocked-metadata-path',
+                student_wallet_address: 'gstudentaddress123456789012345678901234567890123456789',
+                issuer_wallet_address: 'ginstitutionaddress12345678901234567890123456789',
+            },
+            error: null,
+        });
+
+        mockGetCredential.mockResolvedValue({
+            student: 'gstudentaddress123456789012345678901234567890123456789',
+            issuer: 'ginstitutionaddress12345678901234567890123456789',
+            hash: expectedHash,
+            uri: 'ipfs://mocked-metadata-path',
+            issued_at: 1717146000,
+        });
+        mockIsRevoked.mockResolvedValue(false);
+        // Gateway timeout / CID unreachable — a transient infra problem, not
+        // evidence of tampering, so this must not be reported as 'mismatch'.
+        mockFetchJsonFromIpfs.mockResolvedValue({ ok: false, reason: 'timeout' });
+
+        const req = new NextRequest('http://localhost:3000/api/verify/123');
+        const response = await GET(req, { params: Promise.resolve({ token: '123' }) });
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        // The on-chain/DB-based checks are unaffected by IPFS reachability.
+        expect(payload.verification.verified).toBe(true);
+        expect(payload.verification.integrity).toEqual({ status: 'unavailable', cidResolved: false });
     });
 
     // ── 7. ROLE-BASED ROUTE ACCESS ────────────────────────────────────────────

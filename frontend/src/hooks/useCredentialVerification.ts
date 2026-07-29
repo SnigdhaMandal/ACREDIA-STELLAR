@@ -35,6 +35,8 @@ export interface CredentialData {
     issuer_status?: 'active' | 'revoked';
 }
 
+export type IntegrityStatus = 'match' | 'mismatch' | 'unavailable';
+
 export type ScanState =
     | 'idle'
     | 'requesting'
@@ -53,6 +55,7 @@ export function useCredentialVerification(tokenId: string | null) {
     const [credential, setCredential] = useState<CredentialData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [verificationStatus, setVerificationStatus] = useState<'valid' | 'invalid' | 'revoked' | null>(null);
+    const [integrityStatus, setIntegrityStatus] = useState<IntegrityStatus | null>(null);
     const [manualToken, setManualToken] = useState('');
     const [scanMode, setScanMode] = useState(false);
     const [scanState, setScanState] = useState<ScanState>('idle');
@@ -122,9 +125,11 @@ export function useCredentialVerification(tokenId: string | null) {
 
             setCredential(transformedData);
             setVerificationStatus(safe.revoked ? 'revoked' : 'valid');
+            setIntegrityStatus(verification?.integrity?.status ?? null);
         } catch (err: unknown) {
             setError((err instanceof Error ? err.message : String(err)) || 'Failed to verify credential');
             setVerificationStatus('invalid');
+            setIntegrityStatus(null);
         } finally {
             setLoading(false);
         }
@@ -237,6 +242,7 @@ export function useCredentialVerification(tokenId: string | null) {
         credential,
         error,
         verificationStatus,
+        integrityStatus,
         manualToken,
         setManualToken,
         scanMode,

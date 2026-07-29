@@ -1,10 +1,11 @@
-import { serverRuntimeConfig } from './runtimeConfig';
+import { runtimeConfig, serverRuntimeConfig } from './runtimeConfig';
 import { captureException, recordMetric } from './debug';
 
 const PINATA_API_BASE = 'https://api.pinata.cloud/pinning';
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_JSON_SIZE_BYTES = 1 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']);
+const IPFS_FETCH_TIMEOUT_MS = 8_000;
 
 function requirePinataJwt(): string {
     const jwt = serverRuntimeConfig.ipfs.jwt;
@@ -154,6 +155,53 @@ export async function decryptBufferAESGCM(payload: EncryptedPayload, secretKeyHe
     const decryptedBuffer = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, ciphertext as unknown as BufferSource);
 
     return new Uint8Array(decryptedBuffer);
+}
+
+export type IpfsFetchResult =
+    | { ok: true; content: unknown }
+    | { ok: false; reason: 'not_found' | 'gateway_error' | 'invalid_json' | 'timeout' | 'network_error' };
+
+function ipfsGatewayUrl(cidOrUri: string): string {
+    const path = cidOrUri.replace(/^ipfs:\/\//, '');
+    return `${runtimeConfig.ipfs.gatewayUrl}/ipfs/${path}`;
+}
+
+/**
+ * Fetches and parses the JSON document a CID/`ipfs://` URI resolves to, via
+ * the public IPFS gateway — used to independently confirm that a CID
+ * referenced on-chain actually resolves and to recompute its content hash
+ * (see `GET /api/verify/[token]`'s integrity check). Never throws: network
+ * failures, timeouts, and non-2xx responses all collapse to `{ ok: false }`
+ * so callers can report a clear "unavailable" state instead of a 500.
+ */
+export async function fetchJsonFromIpfs(cidOrUri: string): Promise<IpfsFetchResult> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), IPFS_FETCH_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(ipfsGatewayUrl(cidOrUri), { signal: controller.signal });
+
+        if (response.status === 404) {
+            return { ok: false, reason: 'not_found' };
+        }
+
+        if (!response.ok) {
+            recordMetric('ipfs.fetch.error', 1, { status: response.status });
+            return { ok: false, reason: 'gateway_error' };
+        }
+
+        try {
+            return { ok: true, content: await response.json() };
+        } catch {
+            return { ok: false, reason: 'invalid_json' };
+        }
+    } catch (error) {
+        const isAbort = error instanceof Error && error.name === 'AbortError';
+        recordMetric('ipfs.fetch.error', 1, { reason: isAbort ? 'timeout' : 'network_error' });
+        return { ok: false, reason: isAbort ? 'timeout' : 'network_error' };
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 /**

@@ -8,12 +8,20 @@ import {
     BlockchainUnavailableError,
 } from '@/lib/contractReads';
 import { deriveCredentialHash } from '@/lib/credentialHash';
+import { fetchJsonFromIpfs } from '@/lib/ipfsServer';
 import { enforceRateLimit } from '@/lib/rateLimit';
 import {
     writeVerificationAuditLog,
     type VerificationResultType,
 } from '@/lib/verificationAudit';
 import { captureException, recordMetric } from '@/lib/debug';
+
+export type IntegrityStatus = 'match' | 'mismatch' | 'unavailable';
+
+export interface IntegrityResult {
+    status: IntegrityStatus;
+    cidResolved: boolean;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +71,47 @@ function getResultType(verified: boolean, revoked: boolean): VerificationResultT
     return 'mismatch';
 }
 
+/**
+ * Independently confirms that the CID the contract actually points to
+ * (`onChainUri`) resolves and that its content hashes to the same value as
+ * the on-chain `credential_hash`. This is deliberately separate from
+ * `checks.hashMatch` above, which only proves the *database's cached copy*
+ * of the metadata matches the chain — it says nothing about whether the
+ * document a real verifier would fetch from IPFS is the same bytes. See
+ * ACREDIA-STELLAR#163.
+ */
+async function checkIntegrity(
+    onChainUri: string | null | undefined,
+    onChainHash: string | null | undefined,
+    metadataSchemaVersion: number | null | undefined,
+    hashAlgorithm: string | null | undefined,
+): Promise<IntegrityResult> {
+    if (!onChainUri || !onChainHash) {
+        return { status: 'unavailable', cidResolved: false };
+    }
+
+    const fetched = await fetchJsonFromIpfs(onChainUri);
+    if (!fetched.ok) {
+        return { status: 'unavailable', cidResolved: false };
+    }
+
+    try {
+        const fetchedHash = await deriveCredentialHash(
+            fetched.content,
+            metadataSchemaVersion,
+            hashAlgorithm,
+        );
+        return {
+            status: fetchedHash === onChainHash ? 'match' : 'mismatch',
+            cidResolved: true,
+        };
+    } catch {
+        // Content resolved but isn't a canonicalizable document for the
+        // recorded schema version — can't be judged authentic or tampered.
+        return { status: 'unavailable', cidResolved: true };
+    }
+}
+
 async function logVerificationAttempt(
     supabase: ServiceRoleClient | null,
     request: NextRequest,
@@ -76,6 +125,7 @@ async function logVerificationAttempt(
             revoked?: boolean;
             match?: boolean;
         };
+        integrity?: IntegrityResult;
         mismatchReasons?: string[];
         errorCategory?: string;
     } = {},
@@ -85,6 +135,7 @@ async function logVerificationAttempt(
         statusCode,
         credentialId: options.credentialId,
         chain: options.chain,
+        integrityStatus: options.integrity?.status,
         errorCategory: options.errorCategory,
     });
 
@@ -99,6 +150,7 @@ async function logVerificationAttempt(
         statusCode,
         credentialId: options.credentialId,
         chain: options.chain,
+        integrity: options.integrity,
         mismatchReasons: options.mismatchReasons,
         errorCategory: options.errorCategory,
     });
@@ -236,6 +288,22 @@ export async function GET(
         const verified = onChain !== null && onChainMatch && !revoked;
         const resultType = getResultType(verified, revoked);
 
+        // Recompute the hash of the document actually fetched from IPFS (not
+        // the database's cached copy) and compare it to the on-chain hash —
+        // proves the CID resolves *and* that its content is what was
+        // anchored, independent of `checks.hashMatch` above.
+        const integrity = await checkIntegrity(
+            onChain?.uri,
+            onChain?.hash,
+            data.metadata_schema_version,
+            data.hash_algorithm,
+        );
+
+        const mismatchReasons = [
+            ...(resultType === 'mismatch' ? getMismatchReasons(checks) : []),
+            ...(integrity.status === 'mismatch' ? ['ipfs_integrity'] : []),
+        ];
+
         await logVerificationAttempt(supabase, request, token, resultType, 200, {
             credentialId,
             chain: {
@@ -243,7 +311,8 @@ export async function GET(
                 revoked,
                 match: onChainMatch,
             },
-            mismatchReasons: resultType === 'mismatch' ? getMismatchReasons(checks) : [],
+            integrity,
+            mismatchReasons,
         });
 
         const institution = Array.isArray(data.institution)
@@ -281,6 +350,11 @@ export async function GET(
                 onChainFound: onChain !== null,
                 issuerAuthorized,
                 issuerStatus: issuerAuthorized ? 'active' : 'revoked',
+                // Distinct from `revoked`/`onChainFound`: proves the actual
+                // IPFS-hosted document — not the DB's cached copy — hashes to
+                // the on-chain value. 'unavailable' means the CID couldn't be
+                // resolved/checked, not that anything is wrong.
+                integrity,
             },
         });
     } catch (err: unknown) {

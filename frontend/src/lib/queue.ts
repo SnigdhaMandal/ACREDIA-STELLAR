@@ -4,7 +4,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 export interface Job {
     id: string;
     name: string;
-    payload: Record<string, unknown> | unknown;
+    payload: Record<string, unknown>;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     attempts: number;
     max_attempts: number;
@@ -27,7 +27,7 @@ export type JobHandler = (payload: any) => Promise<void> | void;
 export async function enqueueJob(
     client: SupabaseClient,
     name: string,
-    payload: Record<string, unknown> | unknown,
+    payload: Record<string, unknown>,
     options?: {
         idempotencyKey?: string;
         runAt?: Date;
