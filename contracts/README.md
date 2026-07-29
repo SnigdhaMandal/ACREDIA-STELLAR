@@ -6,6 +6,8 @@ Rust-based Soroban smart contracts for Academic Credential Verification on Stell
 
 This repository contains a production-ready Soroban smart contract for Acredia's credential issuance and verification system on Stellar Network.
 
+**Before deploying to mainnet**, read [MAINNET_CHECKLIST.md](./MAINNET_CHECKLIST.md) (owner-key custody, upgrade governance, TTL/keeper strategy, event coverage, error taxonomy, third-party audit) and [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) (internal security review findings and their resolution status).
+
 ### AcrediaCredential Contract (`src/lib.rs`)
 
 Single unified contract combining credential issuance, registry, and verification:
@@ -142,6 +144,8 @@ soroban contract invoke \
 ```
 
 Initialization is one-time only. Any later call to `initialize` will fail and cannot overwrite the owner or reset token sequencing.
+
+`initialize` requires the proposed owner's signature (`owner.require_auth()`), so it cannot be front-run into setting an address you don't control. It **cannot**, on its own, stop someone from front-running the deploy transaction and calling `initialize` with their own address before you do — for that, submit the deploy and `initialize` calls together as a single atomic operation from your trusted deploying account, and treat any `init` event from an unexpected address as a compromised deployment requiring a redeploy before issuing any credentials. See [MAINNET_CHECKLIST.md](./MAINNET_CHECKLIST.md) §2 and [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) F-1.
 
 ### Step 4b: Transfer Ownership Safely (Optional)
 
@@ -416,12 +420,62 @@ For production deployments:
 2. Monitor contract instance TTL and call `total_credentials` (which also bumps instance storage) periodically.
 3. Set alerts when a credential's live-until ledger falls below 1,000,000 (≈ 60 days).
 
+## Events
+
+Every state-changing entrypoint publishes an event so off-chain indexers and monitoring never
+have to poll contract state to detect a change. Topics are listed in publish order; `data` is the
+event payload.
+
+| Event topic(s) | Emitted by | Data |
+|---|---|---|
+| `init` | `initialize` | the new owner address |
+| `own_xfer` | `transfer_owner` | `(current_owner)` topic, new owner as data |
+| `own_acpt` | `accept_owner` | `(previous_owner)` topic, new (now current) owner as data |
+| `iss_auth` | `authorize_issuer` | the authorized issuer address |
+| `iss_rev` | `revoke_issuer` | the revoked issuer address |
+| `cred_iss` | `issue_credential` | `(token_id)` topic, `(student, issuer, credential_hash, ipfs_uri)` data |
+| `cred_rev` | `revoke_credential` | `(token_id)` topic, revoking issuer as data |
+| `paused` | `pause` | none |
+| `unpaused` | `unpause` | none |
+| `upgraded` | `upgrade` | the new WASM hash |
+| `migrated` | `migrate` | `(previous_version)` topic, new version as data |
+
+`bump_credential`, all read-only getters (`get_owner`, `verify_credential`, `is_revoked`, …), and
+`get_pending_owner` do not emit events — they don't change state.
+
+## Error Taxonomy
+
+All fallible entrypoints return `Result<T, ContractError>`. `initialize`'s `AlreadyInitialized`
+and any missing-authorization failure are the only errors that can surface before a contract is
+usable; everything else assumes `initialize` has already succeeded.
+
+| Variant | Code | Meaning | Returned by |
+|---|---|---|---|
+| `AlreadyInitialized` | 1 | `initialize` called on a contract that already has an owner | `initialize` |
+| `IssuerNotAuthorized` | 2 | Caller of `issue_credential` is not a currently-authorized issuer | `issue_credential` |
+| `CredentialAlreadyExists` | 3 | `credential_hash` is already indexed by another credential | `issue_credential` |
+| `CredentialNotFound` | 4 | `token_id` does not exist (or has been archived and not yet restored) | `get_credential`, `revoke_credential`, `bump_credential` |
+| `AlreadyRevoked` | 5 | Credential is already marked revoked | `revoke_credential` |
+| `UnauthorizedRevoker` | 6 | Caller is not the address recorded as the credential's issuer (checked *before* `AlreadyRevoked` — see `SECURITY_AUDIT.md`) | `revoke_credential` |
+| `NotInitialized` | 7 | Any owner-gated or state-reading call made before `initialize` has succeeded | `get_owner`, `get_pending_owner`, `is_authorized_issuer`, `total_credentials`, and (via `read_owner`) every owner-gated entrypoint |
+| `SameOwner` | 8 | `transfer_owner` called with the current owner's own address | `transfer_owner` |
+| `NoPendingOwner` | 9 | `accept_owner` called with no transfer in progress | `accept_owner` |
+| `ContractPaused` | 10 | State-changing call attempted while the contract is paused | `issue_credential`, `revoke_credential` |
+
+Beyond `ContractError`, calls can also fail at the host level with an authorization error (no
+matching `require_auth`) before ever reaching contract logic — this is not a `ContractError`
+variant and is not returned as a typed `Err`; it surfaces as a transaction/simulation failure.
+Every entrypoint that requires authorization has an explicit test proving this
+(`test_*_requires_owner_auth` in `src/lib.rs`).
+
 ## Security Notes
 
 ⚠️ **Critical**:
 - Never commit private keys or secrets
 - Always use separate accounts for testnet and mainnet
-- Audit contract code before mainnet deployment
+- Complete every item in [MAINNET_CHECKLIST.md](./MAINNET_CHECKLIST.md) — including an
+  independent third-party audit — before mainnet deployment; see
+  [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for the internal review this project starts from
 - Verify contract IDs on Stellar Expert before interactions
 - Implement proper access control in backend systems
 - Monitor for unauthorized issuers

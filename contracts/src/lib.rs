@@ -176,10 +176,18 @@ impl AcrediaCredential {
         if env.storage().instance().has(&DataKey::Owner) {
             return Err(ContractError::AlreadyInitialized);
         }
+        // Require the proposed owner's signature so initialize cannot be
+        // front-run into setting an address the caller does not control
+        // (which would permanently brick the contract). This does not by
+        // itself prevent front-running of *which* address becomes owner —
+        // deploy and initialize must still be submitted as a single atomic
+        // transaction for that. See contracts/SECURITY_AUDIT.md (F-1).
+        owner.require_auth();
         env.storage().instance().set(&DataKey::Owner, &owner);
         env.storage().instance().set(&DataKey::Initialized, &true);
         env.storage().instance().set(&DataKey::NextTokenId, &1u64);
         extend_instance_ttl(&env);
+        env.events().publish((symbol_short!("init"),), owner);
         Ok(())
     }
 
@@ -501,6 +509,8 @@ impl AcrediaCredential {
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let owner = read_owner(&env);
         owner.require_auth();
+        env.events()
+            .publish((symbol_short!("upgraded"),), new_wasm_hash.clone());
         env.deployer().update_current_contract_wasm(new_wasm_hash);
         extend_instance_ttl(&env);
     }
@@ -532,6 +542,8 @@ impl AcrediaCredential {
             env.storage()
                 .instance()
                 .set(&DataKey::StorageVersion, &2u32);
+            env.events()
+                .publish((symbol_short!("migrated"), current_version), 2u32);
         }
 
         Ok(())
@@ -551,8 +563,13 @@ mod tests {
         let owner = Address::generate(&env);
         let issuer = Address::generate(&env);
         let student = Address::generate(&env);
+        // initialize and authorize_issuer must be separate frames: both call
+        // owner.require_auth(), and mock_all_auths() errors on a second
+        // require_auth() for the same address within one synthetic frame.
         env.as_contract(&contract, || {
             AcrediaCredential::initialize(env.clone(), owner.clone()).unwrap();
+        });
+        env.as_contract(&contract, || {
             AcrediaCredential::authorize_issuer(env.clone(), issuer.clone());
         });
         (env, contract, owner, issuer, student)
@@ -862,6 +879,8 @@ mod tests {
         let issuer = Address::generate(&env);
         env.as_contract(&contract, || {
             AcrediaCredential::initialize(env.clone(), owner).unwrap();
+        });
+        env.as_contract(&contract, || {
             AcrediaCredential::authorize_issuer(env.clone(), issuer);
         });
 
@@ -880,6 +899,8 @@ mod tests {
         let issuer = Address::generate(&env);
         env.as_contract(&contract, || {
             AcrediaCredential::initialize(env.clone(), owner).unwrap();
+        });
+        env.as_contract(&contract, || {
             AcrediaCredential::authorize_issuer(env.clone(), issuer.clone());
         });
         env.as_contract(&contract, || {
@@ -1337,5 +1358,365 @@ mod tests {
         env.as_contract(&contract, || {
             assert!(!AcrediaCredential::is_paused(env.clone()));
         });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Event coverage: initialize / upgrade / migrate
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_initialize_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = AcrediaCredential.register(&env, None, ());
+        let owner = Address::generate(&env);
+        env.as_contract(&contract, || {
+            AcrediaCredential::initialize(env.clone(), owner).unwrap();
+        });
+
+        assert_eq!(
+            last_event_topics(&env),
+            vec![&env, symbol_short!("init").into_val(&env)]
+        );
+    }
+
+    #[test]
+    fn test_upgrade_event() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let wasm_bytes = include_bytes!("../target/wasm32v1-none/release/acredia_stellar.wasm");
+        let new_wasm_hash = env
+            .deployer()
+            .upload_contract_wasm(soroban_sdk::Bytes::from_slice(&env, wasm_bytes));
+
+        client.upgrade(&new_wasm_hash);
+
+        assert_eq!(
+            last_event_topics(&env),
+            vec![&env, symbol_short!("upgraded").into_val(&env)]
+        );
+    }
+
+    #[test]
+    fn test_migrate_event() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+
+        client.migrate();
+
+        assert_eq!(
+            last_event_topics(&env),
+            vec![
+                &env,
+                symbol_short!("migrated").into_val(&env),
+                1u32.into_val(&env),
+            ]
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Owner-only entrypoint gating
+    //
+    // `setup()` uses mock_all_auths(), which mocks every require_auth() as
+    // succeeding regardless of who is "calling" — so it cannot, by itself,
+    // prove a privileged entrypoint is actually gated. Each test below
+    // disables mocking via `env.set_auths(&[])` immediately before invoking
+    // the privileged call, so the underlying owner.require_auth() /
+    // pending_owner.require_auth() must be satisfied for real. With no
+    // authorization supplied, the call must fail, and contract state must be
+    // left unchanged.
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_initialize_requires_owner_auth() {
+        let env = Env::default();
+        let contract = AcrediaCredential.register(&env, None, ());
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let owner = Address::generate(&env);
+
+        // No auths mocked: initialize must fail without the proposed owner's signature.
+        assert!(client.try_initialize(&owner).is_err());
+        // And the contract must remain uninitialized.
+        assert!(client.try_get_owner().is_err());
+    }
+
+    #[test]
+    fn test_transfer_owner_requires_owner_auth() {
+        let (env, contract, owner, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let new_owner = Address::generate(&env);
+
+        env.set_auths(&[]);
+        assert!(client.try_transfer_owner(&new_owner).is_err());
+
+        env.mock_all_auths();
+        assert_eq!(client.get_owner(), owner);
+        assert!(client.get_pending_owner().is_none());
+    }
+
+    #[test]
+    fn test_accept_owner_requires_pending_owner_auth() {
+        let (env, contract, owner, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let new_owner = Address::generate(&env);
+        client.transfer_owner(&new_owner);
+
+        env.set_auths(&[]);
+        assert!(client.try_accept_owner().is_err());
+
+        env.mock_all_auths();
+        assert_eq!(client.get_owner(), owner);
+    }
+
+    #[test]
+    fn test_authorize_issuer_requires_owner_auth() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let rogue_issuer = Address::generate(&env);
+
+        env.set_auths(&[]);
+        assert!(client.try_authorize_issuer(&rogue_issuer).is_err());
+
+        env.mock_all_auths();
+        assert!(!client.is_authorized_issuer(&rogue_issuer));
+    }
+
+    #[test]
+    fn test_revoke_issuer_requires_owner_auth() {
+        let (env, contract, _, issuer, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+
+        env.set_auths(&[]);
+        assert!(client.try_revoke_issuer(&issuer).is_err());
+
+        env.mock_all_auths();
+        assert!(client.is_authorized_issuer(&issuer));
+    }
+
+    #[test]
+    fn test_pause_requires_owner_auth() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+
+        env.set_auths(&[]);
+        assert!(client.try_pause().is_err());
+
+        env.mock_all_auths();
+        assert!(!client.is_paused());
+    }
+
+    #[test]
+    fn test_unpause_requires_owner_auth() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        client.pause();
+
+        env.set_auths(&[]);
+        assert!(client.try_unpause().is_err());
+
+        env.mock_all_auths();
+        assert!(client.is_paused());
+    }
+
+    #[test]
+    fn test_upgrade_requires_owner_auth() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+        let wasm_bytes = include_bytes!("../target/wasm32v1-none/release/acredia_stellar.wasm");
+        let new_wasm_hash = env
+            .deployer()
+            .upload_contract_wasm(soroban_sdk::Bytes::from_slice(&env, wasm_bytes));
+
+        env.set_auths(&[]);
+        assert!(client.try_upgrade(&new_wasm_hash).is_err());
+    }
+
+    #[test]
+    fn test_migrate_requires_owner_auth() {
+        let (env, contract, _, _, _) = setup();
+        let client = AcrediaCredentialClient::new(&env, &contract);
+
+        env.set_auths(&[]);
+        assert!(client.try_migrate().is_err());
+
+        env.mock_all_auths();
+        assert_eq!(client.get_storage_version(), 1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property / invariant tests for issuance & revocation.
+//
+// Rather than a handful of fixed scenarios, this generates randomized
+// sequences of issue/revoke operations (proptest shrinks any failing case to
+// a minimal reproduction) and checks that core invariants hold after every
+// step and at the end of the run:
+//   - token ids are assigned sequentially starting at 1
+//   - a hash can back at most one credential, ever
+//   - only the recorded issuer of a credential can revoke it
+//   - revocation is monotonic (never un-revoked) and idempotent-safe
+//     (a second revoke always fails with AlreadyRevoked)
+//   - total_credentials always equals the number of successful issuances
+//   - every issued credential remains retrievable by id and by hash, with
+//     state matching the model built alongside the contract calls
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod proptest_invariants {
+    extern crate std;
+
+    use super::*;
+    use proptest::prelude::*;
+    use soroban_sdk::testutils::{Address as _, Register};
+
+    fn seed_hash(env: &Env, seed: u8) -> BytesN<32> {
+        BytesN::from_array(env, &[seed; 32])
+    }
+
+    #[derive(Debug, Clone)]
+    enum Op {
+        Issue {
+            issuer_idx: u8,
+            student_idx: u8,
+            hash_seed: u8,
+        },
+        Revoke {
+            by_idx: u8,
+            token_pick: u8,
+        },
+    }
+
+    fn op_strategy() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            (0u8..3, 0u8..3, 0u8..5).prop_map(|(issuer_idx, student_idx, hash_seed)| {
+                Op::Issue {
+                    issuer_idx,
+                    student_idx,
+                    hash_seed,
+                }
+            }),
+            (0u8..4, 0u8..8).prop_map(|(by_idx, token_pick)| Op::Revoke { by_idx, token_pick }),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(48))]
+
+        #[test]
+        fn invariant_issuance_and_revocation_hold(ops in prop::collection::vec(op_strategy(), 1..25)) {
+            // Skip the on-drop test-snapshot JSON dump: with randomized
+            // cases there is no single meaningful scenario worth freezing to
+            // disk the way the named scenario tests in `mod tests` are.
+            let env = Env::new_with_config(soroban_sdk::testutils::EnvTestConfig {
+                capture_snapshot_at_drop: false,
+            });
+            env.mock_all_auths();
+            let contract = AcrediaCredential.register(&env, None, ());
+            let owner = Address::generate(&env);
+            let issuers: std::vec::Vec<Address> = (0..3).map(|_| Address::generate(&env)).collect();
+            // A 4th, never-authorized address used by `Revoke { by_idx: 3, .. }`
+            // to exercise the "not the recorded issuer" rejection path.
+            let rogue = Address::generate(&env);
+            let students: std::vec::Vec<Address> = (0..3).map(|_| Address::generate(&env)).collect();
+
+            env.as_contract(&contract, || {
+                AcrediaCredential::initialize(env.clone(), owner.clone()).unwrap();
+            });
+            for issuer in issuers.iter() {
+                env.as_contract(&contract, || {
+                    AcrediaCredential::authorize_issuer(env.clone(), issuer.clone());
+                });
+            }
+
+            // Parallel model: token_id -> (hash, issuer, revoked).
+            let mut issued: std::vec::Vec<(u64, BytesN<32>, Address, bool)> = std::vec::Vec::new();
+            let mut used_seeds: std::collections::HashSet<u8> = std::collections::HashSet::new();
+            let mut success_count: u64 = 0;
+
+            for op in ops {
+                match op {
+                    Op::Issue { issuer_idx, student_idx, hash_seed } => {
+                        let issuer = issuers[issuer_idx as usize % issuers.len()].clone();
+                        let student = students[student_idx as usize % students.len()].clone();
+                        let hash = seed_hash(&env, hash_seed);
+                        let ipfs = String::from_str(&env, "ipfs://proptest");
+                        let hash_reused = used_seeds.contains(&hash_seed);
+
+                        let result = env.as_contract(&contract, || {
+                            AcrediaCredential::issue_credential(
+                                env.clone(),
+                                student,
+                                issuer.clone(),
+                                hash.clone(),
+                                ipfs,
+                            )
+                        });
+
+                        if hash_reused {
+                            prop_assert_eq!(result, Err(ContractError::CredentialAlreadyExists));
+                        } else {
+                            let token_id = result.expect("fresh hash must issue successfully");
+                            prop_assert_eq!(
+                                token_id,
+                                success_count + 1,
+                                "token ids must be assigned sequentially starting at 1"
+                            );
+                            issued.push((token_id, hash, issuer, false));
+                            used_seeds.insert(hash_seed);
+                            success_count += 1;
+                        }
+                    }
+                    Op::Revoke { by_idx, token_pick } => {
+                        if issued.is_empty() {
+                            continue;
+                        }
+                        let idx = token_pick as usize % issued.len();
+                        let (token_id, _hash, true_issuer, already_revoked) = issued[idx].clone();
+                        let caller = if (by_idx as usize) < issuers.len() {
+                            issuers[by_idx as usize].clone()
+                        } else {
+                            rogue.clone()
+                        };
+
+                        let result = env.as_contract(&contract, || {
+                            AcrediaCredential::revoke_credential(env.clone(), token_id, caller.clone())
+                        });
+
+                        // Mirrors revoke_credential's own precedence: issuer
+                        // identity is checked before the revoked flag.
+                        if caller != true_issuer {
+                            prop_assert_eq!(result, Err(ContractError::UnauthorizedRevoker));
+                        } else if already_revoked {
+                            prop_assert_eq!(result, Err(ContractError::AlreadyRevoked));
+                        } else {
+                            prop_assert!(result.is_ok());
+                            issued[idx].3 = true;
+                        }
+
+                        let is_rev = env.as_contract(&contract, || {
+                            AcrediaCredential::is_revoked(env.clone(), token_id)
+                        });
+                        prop_assert_eq!(is_rev, issued[idx].3, "revocation must be monotonic");
+                    }
+                }
+            }
+
+            let total = env.as_contract(&contract, || AcrediaCredential::total_credentials(env.clone()));
+            prop_assert_eq!(total, success_count, "total_credentials must equal successful issuances");
+
+            for (token_id, hash, issuer, revoked) in issued.iter() {
+                let cred = env
+                    .as_contract(&contract, || AcrediaCredential::get_credential(env.clone(), *token_id))
+                    .expect("every issued credential must remain retrievable by id");
+                prop_assert_eq!(&cred.issuer, issuer);
+                prop_assert_eq!(cred.revoked, *revoked);
+
+                let verified = env
+                    .as_contract(&contract, || {
+                        AcrediaCredential::verify_credential(env.clone(), hash.clone())
+                    })
+                    .expect("every issued credential must remain retrievable by hash");
+                prop_assert_eq!(verified.token_id, *token_id);
+            }
+        }
     }
 }
