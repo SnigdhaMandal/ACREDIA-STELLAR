@@ -49,6 +49,10 @@ vi.mock('@/lib/credentialHash', () => ({
     deriveCredentialHash: async () => 'derived-hash',
 }));
 
+vi.mock('@/lib/ipfsServer', () => ({
+    fetchJsonFromIpfs: async () => ({ ok: true, content: {} }),
+}));
+
 describe('verify route error handling and payload checks', () => {
     beforeEach(() => {
         vi.clearAllMocks();

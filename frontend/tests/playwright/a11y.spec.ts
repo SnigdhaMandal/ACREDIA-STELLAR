@@ -11,7 +11,7 @@ async function runAxe(page: Page) {
     const axeSource = axeModule.source ?? axeModule.default.source;
     await page.addScriptTag({ content: axeSource });
     return page.evaluate(async () => {
-        const axe = (window as Window & { axe: { run: (node: Element, options: unknown) => Promise<{ violations: Array<{ id: string; impact?: string; help: string }> }> } }).axe;
+        const axe = (window as unknown as Window & { axe: { run: (node: Element, options: unknown) => Promise<{ violations: Array<{ id: string; impact?: string; help: string }> }> } }).axe;
         return axe.run(document.documentElement, {
             runOnly: {
                 type: 'tag',
