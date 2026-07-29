@@ -65,13 +65,18 @@ export default function PublicCredentialPage({ params }: PublicCredentialPagePro
                     setCredential({
                         tokenId: c.tokenId,
                         studentName: c.studentName || 'Credential Holder',
+                        studentWallet: c.studentWallet || undefined,
                         degree: c.degree || 'Academic Credential',
                         credentialType: c.credentialType || 'diploma',
                         institutionName: c.institutionName || 'Issuing Institution',
+                        issuerWallet: c.institutionWallet || undefined,
                         issueDate: c.issueDate || '2024-01-01',
                         revoked: Boolean(c.revoked),
                         blockchainHash: c.blockchainHash,
                         ipfsHash: c.ipfsHash,
+                        onChainHash: c.onChainHash || undefined,
+                        metadataSchemaVersion: c.metadataSchemaVersion ?? undefined,
+                        hashAlgorithm: c.hashAlgorithm || undefined,
                         isPublic: true,
                     });
                 }

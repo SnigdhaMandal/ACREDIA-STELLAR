@@ -18,12 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import QRCodeModal from './QRCodeModal';
-import {
-    downloadJsonFile,
-    exportOpenBadgesV3,
-    exportW3cVerifiableCredential,
-    getLinkedInShareUrl,
-} from '@/lib/standardsExport';
+import { buildStandardsExportDocument, downloadJsonFile, getLinkedInShareUrl } from '@/lib/standardsExport';
+import { captureException } from '@/lib/debug';
 
 export interface PublicCredentialCardData {
     tokenId: string;
@@ -40,6 +36,9 @@ export interface PublicCredentialCardData {
     isPublic?: boolean;
     blockchainHash?: string;
     ipfsHash?: string;
+    onChainHash?: string;
+    metadataSchemaVersion?: number;
+    hashAlgorithm?: string;
 }
 
 interface PublicCredentialCardProps {
@@ -49,6 +48,7 @@ interface PublicCredentialCardProps {
 export function PublicCredentialCard({ credential }: PublicCredentialCardProps) {
     const [qrOpen, setQrOpen] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [downloading, setDownloading] = useState(false);
 
     if (credential.isPublic === false) {
         return (
@@ -85,14 +85,30 @@ export function PublicCredentialCard({ credential }: PublicCredentialCardProps) 
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const handleDownloadVc = () => {
-        const data = exportW3cVerifiableCredential(credential);
-        downloadJsonFile(data, `credential-${credential.tokenId}-w3c-vc.json`);
-    };
-
-    const handleDownloadObv3 = () => {
-        const data = exportOpenBadgesV3(credential);
-        downloadJsonFile(data, `credential-${credential.tokenId}-openbadges-v3.json`);
+    const handleDownloadVc = async () => {
+        setDownloading(true);
+        try {
+            const document = await buildStandardsExportDocument({
+                tokenId: credential.tokenId,
+                blockchainHash: credential.blockchainHash,
+                onChainHash: credential.onChainHash,
+                metadataSchemaVersion: credential.metadataSchemaVersion,
+                hashAlgorithm: credential.hashAlgorithm,
+                studentName: credential.studentName,
+                studentWallet: credential.studentWallet,
+                institutionName: credential.institutionName,
+                issuerWallet: credential.issuerWallet,
+                degree: credential.degree,
+                credentialType: credential.credentialType,
+                issueDate: credential.issueDate,
+            });
+            downloadJsonFile(document, `credential-${credential.tokenId}-verifiable-credential.json`);
+        } catch (err) {
+            captureException(err, { context: 'PublicCredentialCard_downloadVc' });
+            alert('Failed to build the Verifiable Credential export. Please try again.');
+        } finally {
+            setDownloading(false);
+        }
     };
 
     return (
@@ -163,12 +179,9 @@ export function PublicCredentialCard({ credential }: PublicCredentialCardProps) 
                         <Share2 className="mr-2 h-4 w-4" /> {copied ? 'Copied Link!' : 'Copy Share Link'}
                     </Button>
 
-                    <Button onClick={handleDownloadVc} variant="outline" size="sm">
-                        <Download className="mr-2 h-4 w-4" /> W3C VC (.json)
-                    </Button>
-
-                    <Button onClick={handleDownloadObv3} variant="outline" size="sm">
-                        <Download className="mr-2 h-4 w-4" /> Open Badges v3
+                    <Button onClick={handleDownloadVc} variant="outline" size="sm" disabled={downloading}>
+                        <Download className="mr-2 h-4 w-4" />
+                        {downloading ? 'Preparing...' : 'Download Verifiable Credential (.json)'}
                     </Button>
                 </div>
             </Card>

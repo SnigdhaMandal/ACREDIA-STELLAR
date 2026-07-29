@@ -357,10 +357,10 @@ graph TD
     style AUTH fill:#10b981,color:#fff
 ```
 
-> **Deeper dive:** see [`docs/architecture.md`](docs/architecture.md) for component responsibilities and the full issue / verify / revoke data flows.
+> **Deeper dive:** see [`docs/architecture.md`](docs/architecture.md) for component responsibilities and the full issue / verify / revoke data flows, and [`frontend/VERIFIABLE_CREDENTIALS.md`](frontend/VERIFIABLE_CREDENTIALS.md) for the W3C Verifiable Credential / Open Badges 3.0 metadata schema, field mapping, and a third-party verification recipe.
 
 **Data flow (summary)**
-- **Issue:** institution fills the form → document + metadata pinned to IPFS → SHA-256 hash computed over the canonical payload → issuer signs `issue_credential(student, issuer, hash, ipfs_uri)` via Freighter → the credential is written on-chain and indexed in Postgres.
+- **Issue:** institution fills the form → document + metadata (modeled as a W3C VC / Open Badges 3.0 document) pinned to IPFS → SHA-256 hash computed over the canonical payload → issuer signs `issue_credential(student, issuer, hash, ipfs_uri)` via Freighter → the credential is written on-chain and indexed in Postgres.
 - **Verify:** anyone opens `/verify` (token/QR) → the app reads the credential from the contract via Soroban RPC → shows authenticity + revocation status; a privacy-safe entry is recorded in `verification_logs`.
 - **Revoke:** the original issuer signs `revoke_credential(token_id, issuer)` → the on-chain record is flagged revoked (still readable, so verifiers see "revoked" not "missing") → the index is updated.
 

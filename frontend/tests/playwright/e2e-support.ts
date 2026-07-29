@@ -178,6 +178,13 @@ export async function installE2eRoutes(page: Page) {
                     degree: credential.metadata?.credentialData?.degree ?? 'Degree',
                     major: credential.metadata?.credentialData?.major ?? null,
                     issueDate: credential.metadata?.credentialData?.issueDate ?? null,
+                    studentWallet: credential.student_wallet_address ?? null,
+                    institutionWallet: credential.issuer_wallet_address ?? null,
+                    metadataSchemaVersion: null,
+                    hashAlgorithm: null,
+                    onChainHash: null,
+                    blockchainHash: credential.blockchain_hash ?? null,
+                    ipfsHash: credential.ipfs_hash ?? null,
                 },
                 verification: {
                     verified: !credential.revoked,
