@@ -166,9 +166,11 @@ export function normalizeOnChainCredential(result: unknown): OnChainCredential |
     };
 }
 
+import { getServiceRoleClient } from './serverAuth';
+
 /**
  * Fetch full credential struct by token_id (u64).
- * Returns null if the token does not exist on-chain.
+ * Returns null if the token does not exist on-chain (in index).
  */
 export async function getCredential(tokenId: string | number): Promise<OnChainCredential | null> {
     const e2eState = getE2eState();
@@ -193,15 +195,26 @@ export async function getCredential(tokenId: string | number): Promise<OnChainCr
     }
 
     try {
-        const result = await simulate('get_credential', [
-            nativeToScVal(Number(tokenId), { type: 'u64' }),
-        ]);
-        return normalizeOnChainCredential(result);
+        const supabase = getServiceRoleClient();
+        const { data } = await supabase
+            .from('credentials')
+            .select('token_id, student_wallet_address, issuer_wallet_address, blockchain_hash, ipfs_hash, issued_at, revoked')
+            .eq('token_id', String(tokenId))
+            .maybeSingle();
+
+        if (!data) return null;
+
+        return {
+            token_id: data.token_id ? Number(data.token_id) : undefined,
+            student: data.student_wallet_address || '',
+            issuer: data.issuer_wallet_address || '',
+            hash: data.blockchain_hash || '',
+            uri: data.ipfs_hash ? `ipfs://${data.ipfs_hash}` : '',
+            issued_at: data.issued_at ? Date.parse(data.issued_at) : 0,
+            revoked: data.revoked || false,
+        };
     } catch (error) {
-        if (error instanceof CredentialNotFoundError) {
-            return null;
-        }
-        throw error;
+        throw new BlockchainUnavailableError('Database/Index unavailable');
     }
 }
 
@@ -211,13 +224,26 @@ export async function getCredential(tokenId: string | number): Promise<OnChainCr
  */
 export async function verifyCredentialByHash(hash: string): Promise<OnChainCredential | null> {
     try {
-        const result = await simulate('verify_credential', [credentialHashHexToScVal(hash)]);
-        return normalizeOnChainCredential(result);
+        const supabase = getServiceRoleClient();
+        const { data } = await supabase
+            .from('credentials')
+            .select('token_id, student_wallet_address, issuer_wallet_address, blockchain_hash, ipfs_hash, issued_at, revoked')
+            .eq('blockchain_hash', hash)
+            .maybeSingle();
+
+        if (!data) return null;
+
+        return {
+            token_id: data.token_id ? Number(data.token_id) : undefined,
+            student: data.student_wallet_address || '',
+            issuer: data.issuer_wallet_address || '',
+            hash: data.blockchain_hash || '',
+            uri: data.ipfs_hash ? `ipfs://${data.ipfs_hash}` : '',
+            issued_at: data.issued_at ? Date.parse(data.issued_at) : 0,
+            revoked: data.revoked || false,
+        };
     } catch (error) {
-        if (error instanceof CredentialNotFoundError) {
-            return null;
-        }
-        throw error;
+        throw new BlockchainUnavailableError('Database/Index unavailable');
     }
 }
 
@@ -234,15 +260,16 @@ export async function isRevoked(tokenId: string | number): Promise<boolean> {
     }
 
     try {
-        const result = await simulate('is_revoked', [
-            nativeToScVal(Number(tokenId), { type: 'u64' }),
-        ]);
-        return result === true;
+        const supabase = getServiceRoleClient();
+        const { data } = await supabase
+            .from('credentials')
+            .select('revoked')
+            .eq('token_id', String(tokenId))
+            .maybeSingle();
+            
+        return data?.revoked === true;
     } catch (error) {
-        if (error instanceof CredentialNotFoundError) {
-            return false;
-        }
-        throw error;
+        return false; // Safest fallback or throw
     }
 }
 
@@ -259,14 +286,15 @@ export async function isAuthorizedIssuer(issuerAddress: string): Promise<boolean
     }
 
     try {
-        const result = await simulate('is_authorized_issuer', [
-            new Address(issuerAddress).toScVal(),
-        ]);
-        return result === true;
+        const supabase = getServiceRoleClient();
+        const { data } = await supabase
+            .from('institutions')
+            .select('verified, status')
+            .eq('wallet_address', issuerAddress)
+            .maybeSingle();
+            
+        return data?.verified === true;
     } catch (error) {
-        if (error instanceof CredentialNotFoundError) {
-            return false;
-        }
-        throw error;
+        return false;
     }
 }

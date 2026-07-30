@@ -141,6 +141,13 @@ export async function GET(request: NextRequest) {
             number
         >;
 
+        // Fetch indexer state
+        const { data: indexerState } = await supabase
+            .from('indexer_state')
+            .select('last_ledger, updated_at')
+            .eq('id', 'main')
+            .maybeSingle();
+
         return NextResponse.json({
             success: true,
             stats: {
@@ -154,6 +161,10 @@ export async function GET(request: NextRequest) {
                     attemptsLast24h: verificationAttemptsLast24h || 0,
                     resultCounts: verificationResultCounts,
                 },
+                indexer: {
+                    lastLedger: indexerState?.last_ledger || null,
+                    lastUpdated: indexerState?.updated_at || null,
+                }
             },
         });
     } catch (error) {

@@ -1,0 +1,37 @@
+# A string used to distinguish different Supabase projects on the same host. Defaults to the working directory name when running `supabase init`.
+project_id = "acredia"
+
+[api]
+port = 54321
+# Extra schemas to add to the search_path of every request.
+extra_search_path = ["public"]
+# The maximum number of rows returns from a view, table, or stored procedure. Limits payload size for accidental or malicious requests.
+max_rows = 1000
+
+[db]
+port = 54322
+# The database major version to use. This should match your remote database's version.
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+
+[auth]
+port = 54324
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[studio]
+port = 54323
+
+[storage]
+file_size_limit = "50MiB"
