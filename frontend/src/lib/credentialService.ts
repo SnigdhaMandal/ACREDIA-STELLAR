@@ -200,6 +200,13 @@ export async function issueCredential(
             institutionId: data.institutionId,
         });
 
+        // Trigger transactional email
+        fetch('/api/notifications/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'issued', tokenId }),
+        }).catch(err => console.error('Failed to trigger email:', err));
+
         return {
             tokenId,
             transactionHash,

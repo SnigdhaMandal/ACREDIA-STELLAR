@@ -13,7 +13,8 @@
         "test:a11y": "playwright test tests/playwright/a11y.spec.ts",
         "test:load": "vitest run tests/load-endpoints.test.ts",
         "lint": "eslint .",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+        "email-worker": "npx tsx scripts/emailWorker.ts"
     },
     "dependencies": {
         "@hookform/resolvers": "^5.4.0",
