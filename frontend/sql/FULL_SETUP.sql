@@ -330,6 +330,7 @@ ALTER TABLE IF EXISTS public.credentials       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.api_keys          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jobs              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.indexer_state     ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------
 -- Drop any legacy / permissive policies before recreating (idempotent)
@@ -608,6 +609,27 @@ CREATE POLICY "Admin can view jobs"
 
 CREATE POLICY "Admin can manage jobs"
     ON public.jobs FOR ALL
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
+-- ---------------------------------------------------------------------
+-- Indexer State
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.indexer_state (
+    id TEXT PRIMARY KEY DEFAULT 'main',
+    last_ledger INTEGER NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.indexer_state IS
+    'Tracks the off-chain indexer progress syncing events from the Soroban contract.';
+
+CREATE POLICY "Admin can view indexer state"
+    ON public.indexer_state FOR SELECT
+    USING (public.is_admin());
+
+CREATE POLICY "Admin can manage indexer state"
+    ON public.indexer_state FOR ALL
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
 

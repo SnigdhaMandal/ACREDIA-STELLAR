@@ -117,6 +117,12 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at
     ON public.jobs (status, run_at) 
     WHERE status = 'pending';
 
+CREATE TABLE IF NOT EXISTS public.indexer_state (
+    id TEXT PRIMARY KEY DEFAULT 'main',
+    last_ledger INTEGER NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 ALTER TABLE IF EXISTS public.profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.institutions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.students          ENABLE ROW LEVEL SECURITY;
@@ -124,3 +130,4 @@ ALTER TABLE IF EXISTS public.credentials       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.api_keys          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jobs              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.indexer_state     ENABLE ROW LEVEL SECURITY;
