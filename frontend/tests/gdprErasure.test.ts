@@ -14,15 +14,14 @@ import { join } from 'node:path';
 // SQL content tests
 // ---------------------------------------------------------------------------
 
-const sqlDir = join(process.cwd(), 'sql');
-
-function readSql(name: string) {
-    return readFileSync(join(sqlDir, name), 'utf8');
+function readSql(...segments: string[]) {
+    return readFileSync(join(process.cwd(), ...segments), 'utf8');
 }
 
-const gdprErasure = readSql('gdpr_erasure.sql');
-const fullSetup = readSql('FULL_SETUP.sql');
-const baseSchema = readSql('database_schema.sql');
+const gdprErasure = readSql('sql', 'gdpr_erasure.sql');
+// The schema is consolidated into a single idempotent Supabase migration
+// file; there is no separate database_schema.sql anymore (it was folded in).
+const fullSetup = readSql('supabase', 'migrations', '20260730000000_initial_schema.sql');
 
 describe('gdpr_erasure.sql — DDL structure', () => {
     it('creates the erasure_requests table with required columns', () => {
@@ -84,7 +83,7 @@ describe('gdpr_erasure.sql — DDL structure', () => {
     });
 });
 
-describe('FULL_SETUP.sql — includes erasure_requests', () => {
+describe('consolidated migration — includes erasure_requests', () => {
     it('includes the erasure_requests table definition', () => {
         expect(fullSetup).toContain('CREATE TABLE IF NOT EXISTS public.erasure_requests');
     });
@@ -102,13 +101,6 @@ describe('FULL_SETUP.sql — includes erasure_requests', () => {
     it('has updated 90-day retention COMMENT on verification_logs', () => {
         expect(fullSetup).toContain('90 days');
         expect(fullSetup).toContain('purge_old_verification_logs');
-    });
-});
-
-describe('database_schema.sql — retention policy annotation', () => {
-    it('has 90-day retention COMMENT on verification_logs', () => {
-        expect(baseSchema).toContain('90 days');
-        expect(baseSchema).toContain('purge_old_verification_logs');
     });
 });
 
