@@ -126,6 +126,124 @@ export async function pinJsonToPinata(content: unknown): Promise<string> {
     return parsePinataCid(await response.json());
 }
 
+/**
+ * Checks whether Pinata currently reports `cid` as pinned (issue #164).
+ * Uses the longstanding `data/pinList` endpoint in the same v1 API family
+ * as `pinFileToPinata`/`pinJsonToPinata`.
+ */
+export async function checkPinataPinStatus(cid: string): Promise<'pinned' | 'missing'> {
+    const jwt = requirePinataJwt();
+
+    const response = await fetch(
+        `https://api.pinata.cloud/data/pinList?hashContains=${encodeURIComponent(cid)}&status=pinned`,
+        { headers: { Authorization: `Bearer ${jwt}` } },
+    );
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Pinata pin status check failed: ${response.status} ${errorBody}`);
+    }
+
+    const payload = (await response.json()) as { rows?: Array<{ ipfs_pin_hash?: string }> };
+    const rows = payload.rows ?? [];
+
+    return rows.some((row) => row.ipfs_pin_hash === cid) ? 'pinned' : 'missing';
+}
+
+// ─── Secondary pinning provider (IPFS Pinning Services API) ─────────────────
+// https://ipfs.github.io/pinning-services-api-spec/ — implemented by
+// Filebase, Crust Network, Temporal, self-hosted ipfs-cluster, and others.
+// This is the second, independent provider issue #164 requires: losing
+// Pinata alone must not make a credential's document unretrievable.
+
+export type SecondaryPinStatus = 'queued' | 'pinning' | 'pinned' | 'failed';
+
+export interface SecondaryPinResult {
+    requestId: string;
+    status: SecondaryPinStatus;
+}
+
+/** True once an operator has configured a spec-compliant secondary provider. */
+export function isSecondaryPinningConfigured(): boolean {
+    return Boolean(
+        serverRuntimeConfig.pinning.secondaryEndpoint && serverRuntimeConfig.pinning.secondaryToken,
+    );
+}
+
+function requireSecondaryPinningConfig(): { endpoint: string; token: string } {
+    const { secondaryEndpoint, secondaryToken } = serverRuntimeConfig.pinning;
+
+    if (!secondaryEndpoint || !secondaryToken) {
+        throw new Error(
+            'Secondary pinning provider is not configured. Set SECONDARY_PINNING_ENDPOINT and ' +
+                'SECONDARY_PINNING_TOKEN — see frontend/PIN_REDUNDANCY.md.',
+        );
+    }
+
+    return { endpoint: secondaryEndpoint, token: secondaryToken };
+}
+
+function parseSecondaryPinResponse(payload: unknown): SecondaryPinResult {
+    const record = (payload ?? {}) as { requestid?: unknown; status?: unknown };
+    const validStatuses: SecondaryPinStatus[] = ['queued', 'pinning', 'pinned', 'failed'];
+    const status = validStatuses.includes(record.status as SecondaryPinStatus)
+        ? (record.status as SecondaryPinStatus)
+        : 'failed';
+
+    return {
+        requestId: typeof record.requestid === 'string' ? record.requestid : '',
+        status,
+    };
+}
+
+/**
+ * Asks the secondary provider to pin an existing CID (pin-by-CID: the
+ * provider fetches the content itself from the public IPFS network — it
+ * does not need the bytes uploaded to it directly). The content must
+ * already be discoverable somewhere on the network (typically because
+ * Pinata is currently serving it) for this to succeed.
+ */
+export async function pinCidToSecondaryProvider(cid: string, name: string): Promise<SecondaryPinResult> {
+    const { endpoint, token } = requireSecondaryPinningConfig();
+
+    const response = await fetch(`${endpoint}/pins`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ cid, name }),
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        recordMetric('ipfs.secondary_pin.error', 1, { status: response.status });
+        throw new Error(`Secondary pinning provider rejected the pin request: ${response.status} ${errorBody}`);
+    }
+
+    return parseSecondaryPinResponse(await response.json());
+}
+
+/** Polls the secondary provider for the current status of a previously-submitted pin request. */
+export async function getSecondaryPinStatus(requestId: string): Promise<SecondaryPinResult> {
+    const { endpoint, token } = requireSecondaryPinningConfig();
+
+    const response = await fetch(`${endpoint}/pins/${encodeURIComponent(requestId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (response.status === 404) {
+        return { requestId, status: 'failed' };
+    }
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Secondary pinning provider status check failed: ${response.status} ${errorBody}`);
+    }
+
+    return parseSecondaryPinResponse(await response.json());
+}
+
 export interface EncryptedPayload {
     encrypted: true;
     algorithm: 'AES-GCM';
