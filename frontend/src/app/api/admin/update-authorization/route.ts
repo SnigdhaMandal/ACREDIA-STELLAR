@@ -97,6 +97,28 @@ export async function POST(request: NextRequest) {
                 );
             }
 
+            // Enqueue verified notification
+            const { data: userProfile } = await supabase
+                .from('profiles')
+                .select('email')
+                .eq('id', institution.auth_user_id)
+                .single();
+                
+            if (userProfile?.email) {
+                await supabase.from('jobs').insert({
+                    name: 'send_email',
+                    payload: {
+                        to: userProfile.email,
+                        subject: 'Institution Verified',
+                        type: 'verified',
+                        userId: institution.auth_user_id,
+                        payload: {
+                            institutionName: institution.name
+                        }
+                    }
+                });
+            }
+
             return NextResponse.json({
                 success: true,
                 message: 'Institution verified successfully',

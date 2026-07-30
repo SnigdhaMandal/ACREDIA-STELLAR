@@ -14,9 +14,7 @@
         "test:load": "vitest run tests/load-endpoints.test.ts",
         "lint": "eslint .",
         "format": "prettier --write .",
-        "indexer": "npx tsx scripts/indexer.ts",
-        "db:backup": "bash scripts/backup-db.sh",
-        "db:restore": "bash scripts/restore-db.sh"
+        "email-worker": "npx tsx scripts/emailWorker.ts"
     },
     "dependencies": {
         "@hookform/resolvers": "^5.4.0",
