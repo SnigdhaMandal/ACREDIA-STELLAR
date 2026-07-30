@@ -15,6 +15,7 @@ import {
     type VerificationResultType,
 } from '@/lib/verificationAudit';
 import { captureException, recordMetric } from '@/lib/debug';
+import { hashApiKey } from '@/lib/apiKey';
 
 export type IntegrityStatus = 'match' | 'mismatch' | 'unavailable';
 
@@ -128,6 +129,7 @@ async function logVerificationAttempt(
         integrity?: IntegrityResult;
         mismatchReasons?: string[];
         errorCategory?: string;
+        apiKeyContext?: { id: string; name: string } | null;
     } = {},
 ) {
     recordMetric('verification.attempt', 1, {
@@ -153,6 +155,7 @@ async function logVerificationAttempt(
         integrity: options.integrity,
         mismatchReasons: options.mismatchReasons,
         errorCategory: options.errorCategory,
+        apiKeyContext: options.apiKeyContext,
     });
 }
 
@@ -176,18 +179,55 @@ export async function GET(
             );
         }
 
-        const rateLimitResponse = await enforceRateLimit(request, VERIFY_RATE_LIMIT);
+        try {
+            supabase = getServiceRoleClient();
+        } catch {
+            supabase = null;
+        }
+
+        let apiKeyContext: { id: string, name: string } | null = null;
+        const authHeader = request.headers.get('authorization');
+        const xApiKey = request.headers.get('x-api-key');
+        let providedKey = xApiKey?.trim();
+        if (!providedKey && authHeader?.toLowerCase().startsWith('bearer ')) {
+            providedKey = authHeader.substring(7).trim();
+        }
+
+        if (providedKey && supabase) {
+            const keyHash = await hashApiKey(providedKey);
+            const { data: keyData, error: keyError } = await supabase
+                .from('api_keys')
+                .select('id, name, revoked')
+                .eq('key_hash', keyHash)
+                .maybeSingle();
+
+            if (keyError) {
+                return NextResponse.json(
+                    { success: false, error: 'Database error validating API key' },
+                    { status: 500 }
+                );
+            }
+
+            if (!keyData || keyData.revoked) {
+                return NextResponse.json(
+                    { success: false, error: 'Invalid or revoked API key' },
+                    { status: 401 }
+                );
+            }
+            
+            apiKeyContext = { id: keyData.id, name: keyData.name };
+        }
+
+        const rateLimitResponse = await enforceRateLimit(request, {
+            ...VERIFY_RATE_LIMIT,
+            identifier: apiKeyContext ? apiKeyContext.id : undefined,
+        });
+
         if (rateLimitResponse) {
             return rateLimitResponse;
         }
 
         if (token.length > MAX_TOKEN_LENGTH) {
-            try {
-                supabase = getServiceRoleClient();
-            } catch {
-                supabase = null;
-            }
-
             await logVerificationAttempt(supabase, request, token, 'invalid_request', 400, {
                 errorCategory: 'token_too_long',
             });
@@ -197,8 +237,6 @@ export async function GET(
                 { status: 400 },
             );
         }
-
-        supabase = getServiceRoleClient();
 
         const { data, error } = await supabase
             .from('credentials')
@@ -227,6 +265,7 @@ export async function GET(
         if (error) {
             await logVerificationAttempt(supabase, request, token, 'server_error', 500, {
                 errorCategory: 'database_query_failed',
+                apiKeyContext,
             });
 
             return NextResponse.json(
@@ -236,7 +275,7 @@ export async function GET(
         }
 
         if (!data) {
-            await logVerificationAttempt(supabase, request, token, 'not_found', 404);
+            await logVerificationAttempt(supabase, request, token, 'not_found', 404, { apiKeyContext });
 
             return NextResponse.json(
                 { success: false, error: 'Credential not found' },
@@ -313,6 +352,7 @@ export async function GET(
             },
             integrity,
             mismatchReasons,
+            apiKeyContext,
         });
 
         const institution = Array.isArray(data.institution)
@@ -363,6 +403,7 @@ export async function GET(
             await logVerificationAttempt(supabase, request, token, 'chain_unavailable', 500, {
                 credentialId,
                 errorCategory: 'contract_configuration',
+                apiKeyContext,
             });
 
             return NextResponse.json(
@@ -376,6 +417,7 @@ export async function GET(
             await logVerificationAttempt(supabase, request, token, 'chain_unavailable', 503, {
                 credentialId,
                 errorCategory: 'contract_read_failed',
+                apiKeyContext,
             });
 
             return NextResponse.json(
@@ -387,6 +429,7 @@ export async function GET(
         await logVerificationAttempt(supabase, request, token, 'server_error', 500, {
             credentialId,
             errorCategory: 'unexpected_error',
+            apiKeyContext,
         });
         captureException(err, { requestId, context: 'GET /api/verify/[token]' });
 

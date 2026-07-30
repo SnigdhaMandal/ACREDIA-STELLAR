@@ -85,6 +85,17 @@ CREATE TABLE IF NOT EXISTS public.verification_logs (
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- API Keys for programmatic verification
+CREATE TABLE IF NOT EXISTS public.api_keys (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4 (),
+    institution_id      UUID REFERENCES public.institutions (id) ON DELETE CASCADE,
+    key_prefix          TEXT NOT NULL,
+    key_hash            TEXT NOT NULL UNIQUE,
+    name                TEXT NOT NULL,
+    revoked             BOOLEAN DEFAULT false,
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 COMMENT ON TABLE public.verification_logs IS
     'Privacy-safe audit log for public verification attempts. '
     'Stores coarse outcomes and hashed request identifiers only — no PII. '
@@ -306,6 +317,8 @@ CREATE INDEX IF NOT EXISTS idx_credentials_issued_at
 CREATE INDEX IF NOT EXISTS idx_verification_logs_created_at ON public.verification_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_verification_logs_result_type
     ON public.verification_logs ((verification_result->>'result_type'));
+CREATE INDEX IF NOT EXISTS idx_api_keys_institution         ON public.api_keys (institution_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash                ON public.api_keys (key_hash);
 
 -- ---------------------------------------------------------------------
 -- Enable Row Level Security
@@ -315,6 +328,7 @@ ALTER TABLE IF EXISTS public.institutions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.students          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.credentials       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.api_keys          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jobs              ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------
@@ -354,6 +368,11 @@ DROP POLICY IF EXISTS "Anyone can insert verification logs"             ON publi
 DROP POLICY IF EXISTS "Anyone can view verification logs"               ON public.verification_logs;
 DROP POLICY IF EXISTS "Admin can view verification logs"                ON public.verification_logs;
 DROP POLICY IF EXISTS "Admin can insert verification logs"              ON public.verification_logs;
+
+DROP POLICY IF EXISTS "Institutions can view own api keys"              ON public.api_keys;
+DROP POLICY IF EXISTS "Institutions can insert own api keys"            ON public.api_keys;
+DROP POLICY IF EXISTS "Institutions can update own api keys"            ON public.api_keys;
+DROP POLICY IF EXISTS "Admin can manage all api keys"                   ON public.api_keys;
 
 DROP POLICY IF EXISTS "Users can view own erasure requests"             ON public.erasure_requests;
 DROP POLICY IF EXISTS "Admin can view all erasure requests"             ON public.erasure_requests;
@@ -484,6 +503,43 @@ CREATE POLICY "Admin can view verification logs"
 
 CREATE POLICY "Admin can insert verification logs"
   ON public.verification_logs FOR INSERT
+  WITH CHECK (public.is_admin());
+
+-- ---------------------------------------------------------------------
+-- API Keys policies
+-- ---------------------------------------------------------------------
+CREATE POLICY "Institutions can view own api keys"
+  ON public.api_keys FOR SELECT
+  USING (
+    institution_id IN (
+      SELECT id FROM public.institutions WHERE auth_user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Institutions can insert own api keys"
+  ON public.api_keys FOR INSERT
+  WITH CHECK (
+    institution_id IN (
+      SELECT id FROM public.institutions WHERE auth_user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Institutions can update own api keys"
+  ON public.api_keys FOR UPDATE
+  USING (
+    institution_id IN (
+      SELECT id FROM public.institutions WHERE auth_user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    institution_id IN (
+      SELECT id FROM public.institutions WHERE auth_user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Admin can manage all api keys"
+  ON public.api_keys FOR ALL
+  USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
 -- ---------------------------------------------------------------------

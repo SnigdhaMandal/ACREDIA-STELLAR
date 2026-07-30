@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS public.verification_logs (
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.api_keys (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4 (),
+    institution_id      UUID REFERENCES public.institutions (id) ON DELETE CASCADE,
+    key_prefix          TEXT NOT NULL,
+    key_hash            TEXT NOT NULL UNIQUE,
+    name                TEXT NOT NULL,
+    revoked             BOOLEAN DEFAULT false,
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 COMMENT ON TABLE public.verification_logs IS
     'Privacy-safe audit log for public verification attempts. '
     'Stores coarse outcomes and hashed request identifiers only — no PII. '
@@ -80,6 +90,8 @@ CREATE INDEX IF NOT EXISTS idx_verification_logs_credential ON public.verificati
 CREATE INDEX IF NOT EXISTS idx_verification_logs_created_at ON public.verification_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_verification_logs_result_type
     ON public.verification_logs ((verification_result->>'result_type'));
+CREATE INDEX IF NOT EXISTS idx_api_keys_institution         ON public.api_keys (institution_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash                ON public.api_keys (key_hash);
 
 CREATE TABLE IF NOT EXISTS public.jobs (
     id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -110,4 +122,5 @@ ALTER TABLE IF EXISTS public.institutions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.students          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.credentials       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.api_keys          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.jobs              ENABLE ROW LEVEL SECURITY;
