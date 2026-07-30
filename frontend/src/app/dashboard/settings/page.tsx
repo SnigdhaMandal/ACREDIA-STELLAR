@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { ProtectedRoute, useAuth } from '@/contexts/AuthContext';
 import { signOut, safeGetSession } from '@/lib/supabase';
 import Link from 'next/link';
+import { ApiKeysManager } from './ApiKeysManager';
 
 /**
  * Dashboard Settings page — /dashboard/settings
@@ -111,6 +112,11 @@ function SettingsContent() {
                         </Link>
                     </div>
                 </Card>
+
+                {/* API Keys (for institutions) */}
+                {user?.user_metadata?.role === 'institution' && (
+                    <ApiKeysManager />
+                )}
 
                 {/* Danger zone — delete account */}
                 <Card className="border-destructive/30 p-6">

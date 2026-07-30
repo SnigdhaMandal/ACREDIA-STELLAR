@@ -47,6 +47,7 @@ type VerificationAuditLog = {
     };
     mismatchReasons?: string[];
     errorCategory?: string;
+    apiKeyContext?: { id: string; name: string } | null;
 };
 
 function getHashSecret() {
@@ -85,7 +86,7 @@ export async function writeVerificationAuditLog(
         const { error } = await client.from('verification_logs').insert({
             credential_id: log.credentialId ?? null,
             verifier_email: null,
-            verifier_org: null,
+            verifier_org: log.apiKeyContext?.name ?? null,
             verification_result: buildVerificationResult(log),
         });
 
