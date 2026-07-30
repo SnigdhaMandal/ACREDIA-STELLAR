@@ -53,6 +53,20 @@ graph TD
 
 ---
 
+## 3. Database Management & Migrations
+
+Acredia manages the PostgreSQL schema, seed data, and backups using the **Supabase CLI**.
+
+- **Migrations**: The database schema is defined as versioned migrations in `frontend/supabase/migrations/`. 
+  - To apply migrations locally, run `npx supabase db push` or simply `npx supabase start`.
+  - To create a new migration: `npx supabase migration new <descriptive-name>`.
+- **Seed Data**: Dummy users, institutions, and credentials for local development are managed in `frontend/supabase/seed.sql`. When starting a local Supabase environment, the seed data is populated automatically.
+- **Backups & Restore**: Automated logical backups can be run via npm scripts:
+  - `npm run db:backup` -> Dumps the current `public` schema and data into `frontend/supabase/backups/`.
+  - `npm run db:restore path/to/backup.sql` -> Restores a logical dump to the database (requires `psql` or the Supabase CLI).
+
+---
+
 ## 3. Trust & security model
 
 - **On-chain is the source of truth.** The database is a convenience index; verification ultimately rests on the contract + hash.

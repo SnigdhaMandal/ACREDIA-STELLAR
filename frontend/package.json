@@ -13,7 +13,10 @@
         "test:a11y": "playwright test tests/playwright/a11y.spec.ts",
         "test:load": "vitest run tests/load-endpoints.test.ts",
         "lint": "eslint .",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+        "indexer": "npx tsx scripts/indexer.ts",
+        "db:backup": "bash scripts/backup-db.sh",
+        "db:restore": "bash scripts/restore-db.sh"
     },
     "dependencies": {
         "@hookform/resolvers": "^5.4.0",
