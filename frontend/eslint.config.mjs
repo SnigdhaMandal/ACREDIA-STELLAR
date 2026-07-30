@@ -34,6 +34,14 @@ export default tseslint.config(
     }
   },
   {
+    // Standalone CLI entrypoints (run outside the Next.js app, e.g. by
+    // cron) legitimately print operator-facing status to stdout/stderr.
+    files: ['worker/**/*.ts'],
+    rules: {
+      "no-console": "off"
+    }
+  },
+  {
     ignores: [
       ".next/",
       "node_modules/",

@@ -39,6 +39,19 @@ type ServerRuntimeConfig = {
     ipfs: {
         jwt: string;
     };
+    /**
+     * Second, independent IPFS pinning provider (issue #164). Any provider
+     * implementing the IPFS Pinning Services API spec
+     * (https://ipfs.github.io/pinning-services-api-spec/) works — e.g.
+     * Filebase, Crust Network, Temporal, or a self-hosted ipfs-cluster.
+     * Both fields empty means redundancy is not configured; the pin-keeper
+     * records this honestly as `not_configured` rather than `failed`.
+     */
+    pinning: {
+        secondaryEndpoint: string;
+        secondaryToken: string;
+        secondaryProviderName: string;
+    };
     verification: {
         hashSecret: string;
     };
@@ -321,6 +334,11 @@ function buildServerRuntimeConfig(): ServerRuntimeConfig {
         },
         ipfs: {
             jwt: pinataJwt,
+        },
+        pinning: {
+            secondaryEndpoint: (readEnv('SECONDARY_PINNING_ENDPOINT') ?? '').replace(/\/$/, ''),
+            secondaryToken: readEnv('SECONDARY_PINNING_TOKEN') ?? '',
+            secondaryProviderName: readEnv('SECONDARY_PINNING_PROVIDER_NAME') ?? 'secondary',
         },
         verification: {
             hashSecret:

@@ -315,7 +315,11 @@ ALTER TABLE IF EXISTS public.institutions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.students          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.credentials       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.verification_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.jobs              ENABLE ROW LEVEL SECURITY;
+-- NOTE: public.jobs and public.credential_pins are NOT created until later
+-- in this script (see the "Job queue" / "Pin redundancy" sections below),
+-- so an ALTER TABLE IF EXISTS here would silently no-op on a brand-new
+-- database. Each of those sections enables RLS on itself immediately after
+-- its own CREATE TABLE instead — do not add them here.
 
 -- ---------------------------------------------------------------------
 -- Drop any legacy / permissive policies before recreating (idempotent)
@@ -542,9 +546,11 @@ CREATE TABLE IF NOT EXISTS public.jobs (
 COMMENT ON TABLE public.jobs IS
     'Postgres-backed job queue for background asynchronous tasks (re-pinning, indexing, notifications).';
 
-CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at 
-    ON public.jobs (status, run_at) 
+CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at
+    ON public.jobs (status, run_at)
     WHERE status = 'pending';
+
+ALTER TABLE IF EXISTS public.jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Admin can view jobs"
     ON public.jobs FOR SELECT
@@ -554,6 +560,96 @@ CREATE POLICY "Admin can manage jobs"
     ON public.jobs FOR ALL
     USING (public.is_admin())
     WITH CHECK (public.is_admin());
+
+-- ---------------------------------------------------------------------
+-- Pin redundancy table (created by pin_redundancy.sql; definitions here
+-- ensure idempotent setup in this consolidated setup file)
+-- Issue #164: IPFS pin redundancy + re-pinning keeper
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.credential_pins (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    credential_id       UUID NOT NULL REFERENCES public.credentials (id) ON DELETE CASCADE,
+    cid                 TEXT NOT NULL,
+    provider            TEXT NOT NULL CHECK (provider IN ('pinata', 'secondary')),
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'pinned', 'failed', 'not_configured', 'erased')),
+    provider_request_id TEXT,
+    last_checked_at     TIMESTAMP WITH TIME ZONE,
+    last_error          TEXT,
+    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE (credential_id, provider)
+);
+
+COMMENT ON TABLE public.credential_pins IS
+    'Per-credential, per-provider IPFS pin health. A credential is only '
+    'safely retrievable while at least one row here is status = pinned. '
+    'Maintained by the pin-keeper worker (worker/pinKeeper.ts) — see '
+    'frontend/PIN_REDUNDANCY.md for the durability guarantee this backs.';
+
+CREATE INDEX IF NOT EXISTS idx_credential_pins_needs_check
+    ON public.credential_pins (last_checked_at NULLS FIRST)
+    WHERE status NOT IN ('pinned', 'erased');
+
+CREATE INDEX IF NOT EXISTS idx_credential_pins_stale_pinned
+    ON public.credential_pins (last_checked_at)
+    WHERE status = 'pinned';
+
+CREATE INDEX IF NOT EXISTS idx_credential_pins_credential
+    ON public.credential_pins (credential_id);
+
+ALTER TABLE IF EXISTS public.credential_pins ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Institutions can view own credential pins"
+    ON public.credential_pins FOR SELECT
+    USING (
+        credential_id IN (
+            SELECT c.id FROM public.credentials c
+            JOIN public.institutions i ON i.id = c.institution_id
+            WHERE i.auth_user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Students can view own credential pins"
+    ON public.credential_pins FOR SELECT
+    USING (
+        credential_id IN (
+            SELECT c.id FROM public.credentials c
+            JOIN public.students s ON s.id = c.student_id
+            WHERE s.auth_user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Admin can view all credential pins"
+    ON public.credential_pins FOR SELECT
+    USING (public.is_admin());
+
+CREATE POLICY "Admin can manage credential pins"
+    ON public.credential_pins FOR ALL
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
+
+CREATE OR REPLACE FUNCTION public.register_credential_pins()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    INSERT INTO public.credential_pins (credential_id, cid, provider, status)
+    VALUES
+        (NEW.id, NEW.ipfs_hash, 'pinata', 'pending'),
+        (NEW.id, NEW.ipfs_hash, 'secondary', 'pending')
+    ON CONFLICT (credential_id, provider) DO NOTHING;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_register_credential_pins ON public.credentials;
+CREATE TRIGGER trg_register_credential_pins
+    AFTER INSERT ON public.credentials
+    FOR EACH ROW
+    EXECUTE FUNCTION public.register_credential_pins();
 
 COMMIT;
 

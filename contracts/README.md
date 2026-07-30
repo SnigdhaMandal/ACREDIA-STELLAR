@@ -420,6 +420,13 @@ For production deployments:
 2. Monitor contract instance TTL and call `total_credentials` (which also bumps instance storage) periodically.
 3. Set alerts when a credential's live-until ledger falls below 1,000,000 (≈ 60 days).
 
+> **Note:** this on-chain TTL keeper is a separate concern from the
+> off-chain IPFS pin-redundancy keeper (`frontend/worker/pinKeeper.ts`,
+> documented in [`frontend/PIN_REDUNDANCY.md`](../frontend/PIN_REDUNDANCY.md)).
+> The TTL keeper above keeps the on-chain hash/URI record from being
+> archived; the pin keeper keeps the actual document the URI points to
+> retrievable on IPFS. A production deployment needs both.
+
 ## Events
 
 Every state-changing entrypoint publishes an event so off-chain indexers and monitoring never
