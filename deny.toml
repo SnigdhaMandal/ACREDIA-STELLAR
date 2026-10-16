@@ -30,6 +30,9 @@ allow = [
     "Zlib",
 ]
 
+[licenses.private]
+ignore = true
+
 # 3. Crate bans & version control
 [bans]
 multiple-versions = "warn"
