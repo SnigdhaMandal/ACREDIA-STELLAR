@@ -1,20 +1,13 @@
 import { defineConfig } from 'vitest/config';
-import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-    plugins: [tsconfigPaths()],
+    resolve: {
+        tsconfigPaths: true,
+    },
     test: {
         environment: 'node',
         include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
         globals: true,
-        server: {
-            deps: {
-                inline: ['@stellar/js-xdr', '@stellar/stellar-sdk', '@stellar/stellar-base'],
-            },
-        },
-        deps: {
-            interopDefault: true,
-        },
         coverage: {
             reporter: ['text', 'json-summary', 'lcov'],
             reportOnFailure: true,
