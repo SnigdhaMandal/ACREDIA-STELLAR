@@ -1,0 +1,8 @@
+# Configuration for cargo-audit
+# https://docs.rs/cargo-audit/latest/cargo_audit/config/index.html
+
+[advisories]
+ignore = [
+    # paste 1.0.15 is an unmaintained transitive dependency of soroban-sdk, tracked in contracts/SECURITY_AUDIT.md F-9
+    "RUSTSEC-2024-0436",
+]

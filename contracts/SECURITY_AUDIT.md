@@ -37,7 +37,7 @@
 | F-6 | Low | `revoke_issuer` on a never-authorized address is a silent no-op that still emits `iss_rev` | **Fixed** |
 | F-7 | Info | No length cap on `ipfs_uri` | **Fixed** — 256-byte cap, error 17 |
 | F-8 | Info | `read_owner()` uses `.unwrap()`, relying on an invariant rather than a typed error | **Accepted (safe today)** |
-| F-9 | Info | Dependency hygiene (`cargo audit`) | **Informational** |
+| F-9 | Info | Dependency hygiene (`cargo audit` & `cargo deny`) | **Fixed — Automated CI Gate** |
 | F-10 | Info | Re-entrancy | **Reviewed, not applicable** |
 
 ---
@@ -205,8 +205,12 @@ Two informational warnings, both transitive and not exploitable in this contract
 - `paste 1.0.15` — unmaintained (RUSTSEC-2024-0436).
 - `spin 0.9.8` — yanked version.
 
-**Recommendation**: add `cargo audit` to CI (see `MAINNET_CHECKLIST.md`) so newly-disclosed
-advisories are caught automatically rather than at ad hoc review time.
+**Automated CI Gate (#299)**:
+Supply-chain security and dependency hygiene are now enforced automatically in `.github/workflows/ci.yml` under the `smart-contracts` job:
+- **`cargo audit`**: Installed via `taiki-e/install-action@v2` and runs on every push and pull request touching `main`/`master`. Fails CI immediately if any vulnerability advisory is detected in `contracts/Cargo.lock`. Configured in `contracts/.cargo/audit.toml` with the informational unmaintained advisory for `paste 1.0.15` documented and ignored.
+- **`cargo deny`**: Runs `cargo deny check` against `contracts/deny.toml` to enforce repository license compliance, disallow banned/wildcard dependencies, monitor security advisories, and verify crate sources strictly originate from `crates.io`.
+- **Dependabot**: `.github/dependabot.yml` includes the `cargo` ecosystem for `/contracts` to open automated weekly PRs for dependency updates.
+- **Lockfile Review**: `contracts/Cargo.lock` changes are explicitly assigned to `@soumen0818` in `.github/CODEOWNERS`.
 
 ### F-10 (Info) — Re-entrancy — reviewed, not applicable
 
