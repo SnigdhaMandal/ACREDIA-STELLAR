@@ -4,8 +4,9 @@
 # Frontend and related UI ownership
 /frontend/ @soumen0818
 
-# Smart contract ownership
+# Smart contract ownership and lockfile review
 /contracts/ @soumen0818
+/contracts/Cargo.lock @soumen0818
 
 # GitHub automation and repository governance
 /.github/ @soumen0818

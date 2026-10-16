@@ -110,8 +110,9 @@ section is the operational go-live gate for it.
       extend this suite if new state-changing entrypoints are added.
 - [ ] `cargo clippy --all-targets` is clean on production code (pre-existing style-only warnings
       in test helpers are tracked separately and are not a release blocker).
-- [ ] `cargo audit` is run and any newly-disclosed CVE-level advisory is resolved (informational
-      warnings — see SECURITY_AUDIT.md F-9 — do not block release, but should be re-checked).
+- [ ] `cargo audit` and `cargo deny` are enforced as automated gates in CI (`.github/workflows/ci.yml`);
+      any newly-disclosed CVE-level advisory is resolved (informational warnings — see SECURITY_AUDIT.md F-9
+      — do not block release, but should be re-checked).
 
 ## 8. Sign-off
 

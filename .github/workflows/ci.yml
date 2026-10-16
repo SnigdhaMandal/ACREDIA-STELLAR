@@ -179,6 +179,17 @@ jobs:
       - name: Check Formatting
         run: cargo fmt -- --check
 
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: Security Audit (cargo-audit)
+        run: cargo audit
+
+      - name: Supply Chain & Policy Checks (cargo-deny)
+        run: cargo deny check
+
       - name: Compile to optimized WASM
         run: cargo build --target wasm32v1-none --release
 
