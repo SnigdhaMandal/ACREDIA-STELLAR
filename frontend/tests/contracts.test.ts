@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { xdr } from '@stellar/stellar-sdk';
-import { batchCredentialInputToScVal, describeBatchRowError, normalizeTokenId } from '../src/lib/contracts';
+import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import {
+    batchCredentialInputToScVal,
+    describeBatchRowError,
+    getSorobanTransactionResult,
+    normalizeTokenId,
+} from '../src/lib/contracts';
 
 describe('Soroban credential token IDs', () => {
     it('normalizes u64 return values to database-safe token ID strings', () => {
@@ -54,5 +59,45 @@ describe('batchCredentialInputToScVal', () => {
 
         expect(keys).toEqual(['credential_hash', 'ipfs_uri', 'student']);
         expect(keys).toEqual([...keys].sort());
+    });
+});
+
+describe('getSorobanTransactionResult', () => {
+    it('extracts retval from canonical sim.result.retval (Soroban SDK 17 shape)', () => {
+        const val = nativeToScVal(42, { type: 'u64' });
+        expect(getSorobanTransactionResult({ result: { retval: val } })).toBe(BigInt(42));
+    });
+
+    it('extracts retval from nested sim.result.result.retval', () => {
+        const val = nativeToScVal('hello', { type: 'string' });
+        expect(getSorobanTransactionResult({ result: { result: { retval: val } } })).toBe('hello');
+    });
+
+    it('extracts retval from flat sim.retval fallback', () => {
+        const val = nativeToScVal(true, { type: 'bool' });
+        expect(getSorobanTransactionResult({ retval: val })).toBe(true);
+    });
+
+    it('extracts retval from sim.result.xdr.retval', () => {
+        const val = nativeToScVal(123, { type: 'i32' });
+        expect(getSorobanTransactionResult({ result: { xdr: { retval: val } } })).toBe(123);
+    });
+
+    it('decodes base64-encoded ScVal string return values', () => {
+        const val = nativeToScVal('verified', { type: 'string' });
+        const b64 = val.toXDR('base64');
+        expect(getSorobanTransactionResult({ result: { retval: b64 } })).toBe('verified');
+    });
+
+    it('returns null safely for missing, null, or undefined responses', () => {
+        expect(getSorobanTransactionResult(null)).toBeNull();
+        expect(getSorobanTransactionResult(undefined)).toBeNull();
+        expect(getSorobanTransactionResult({})).toBeNull();
+        expect(getSorobanTransactionResult({ result: {} })).toBeNull();
+        expect(getSorobanTransactionResult({ result: { retval: null } })).toBeNull();
+    });
+
+    it('handles malformed base64 strings gracefully without throwing', () => {
+        expect(getSorobanTransactionResult({ result: { retval: 'not-valid-base64!' } })).toBeNull();
     });
 });
