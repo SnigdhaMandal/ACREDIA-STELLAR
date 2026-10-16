@@ -6,10 +6,6 @@ all-features = true
 
 # 1. Security advisories & vulnerabilities
 [advisories]
-vulnerability = "deny"
-unmaintained = "none"
-unsound = "all"
-yanked = "warn"
 ignore = [
     # paste 1.0.15 is an unmaintained transitive dependency of soroban-sdk, tracked in contracts/SECURITY_AUDIT.md F-9
     "RUSTSEC-2024-0436",
@@ -33,8 +29,6 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-copyleft = "warn"
-unlicensed = "warn"
 
 # 3. Crate bans & version control
 [bans]
