@@ -2,17 +2,13 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [graph]
-targets = [
-    "x86_64-unknown-linux-gnu",
-    "wasm32v1-none",
-]
 all-features = true
 
 # 1. Security advisories & vulnerabilities
 [advisories]
 vulnerability = "deny"
-unmaintained = "warn"
-unsound = "warn"
+unmaintained = "workspace"
+unsound = "all"
 yanked = "warn"
 ignore = [
     # paste 1.0.15 is an unmaintained transitive dependency of soroban-sdk, tracked in contracts/SECURITY_AUDIT.md F-9
@@ -31,6 +27,8 @@ allow = [
     "CC0-1.0",
     "ISC",
     "MIT",
+    "MPL-2.0",
+    "OpenSSL",
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
