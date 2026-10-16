@@ -7,6 +7,14 @@ export default defineConfig({
         environment: 'node',
         include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
         globals: true,
+        server: {
+            deps: {
+                inline: ['@stellar/js-xdr', '@stellar/stellar-sdk', '@stellar/stellar-base'],
+            },
+        },
+        deps: {
+            interopDefault: true,
+        },
         coverage: {
             reporter: ['text', 'json-summary', 'lcov'],
             reportOnFailure: true,
