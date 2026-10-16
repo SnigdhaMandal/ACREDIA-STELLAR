@@ -196,6 +196,17 @@ export function normalizeTokenId(returnValue: unknown): string {
 
     throw new Error('Credential transaction confirmed but did not return a valid token ID');
 }
+
+/**
+ * Defensive shape extraction across Soroban RPC versions (SDK 15 -> 17).
+ *
+ * Retained workaround: Different Soroban RPC versions and test mock environments
+ * format simulation responses under varying keys (`sim.result.retval`,
+ * `sim.result.result.retval`, `sim.retval`, or `sim.result.xdr.retval`).
+ * Rather than assuming a single shape that breaks against divergent RPC endpoints,
+ * we probe each known format in priority order, then decode base64 or ScVal objects.
+ * Covered by unit tests in `tests/contracts.test.ts`.
+ */
 export function getSorobanTransactionResult(simResult: unknown): unknown {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sim = simResult as any;

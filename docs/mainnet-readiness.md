@@ -215,13 +215,12 @@ encourage a second member. See [Issue 14](../ISSUE_DRAFT.md).
 No documented on-call rotation, escalation path, or user-communication plan for
 a mainnet incident. Decide before launch, not during one.
 
-### 4.3 Stellar SDK upgrade
+### 4.3 Stellar SDK upgrade — **completed (17.x)**
 
-The project pins `@stellar/stellar-sdk` 15.x. Version 17 is available. There is
-no security reason to rush (the one advisory reaching 15.x was resolved by
-pinning a patched transitive `toml`, and the affected SEP-1 code path is never
-called), but going to mainnet a major version behind is avoidable. Upgrade and
-verify fully on testnet first.
+`@stellar/stellar-sdk` is upgraded to `^17.1.0` (#301).
+- **Compatibility Verified**: All contract invocation, server-side simulation (`simulateRead` / `simulate`), and verification routines in `contracts.ts` and `contractReads.ts` were audited against the 17.x Soroban RPC interfaces.
+- **Defensive Workarounds Documented & Tested**: Retained defensive type guards and multi-shape return value parsing (`getSorobanTransactionResult`) with comprehensive unit test coverage (`tests/contracts.test.ts`) to ensure resilience across divergent RPC node versions and test fixtures.
+- **Test Suite**: All unit and integration test suites pass with `@stellar/stellar-sdk` 17.x.
 
 ---
 
