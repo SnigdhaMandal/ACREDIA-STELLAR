@@ -65,7 +65,9 @@ export function createKeypairSigner(keypair: Keypair): StellarSigner {
         },
 
         async signMessage(message: string): Promise<string> {
-            return keypair.sign(Buffer.from(message, 'utf8')).toString('base64');
+            // `Keypair.sign` returns a plain Uint8Array since stellar-sdk 17, whose
+            // toString ignores the encoding and yields "12,34,…" — wrap it first.
+            return Buffer.from(keypair.sign(Buffer.from(message, 'utf8'))).toString('base64');
         },
     };
 }

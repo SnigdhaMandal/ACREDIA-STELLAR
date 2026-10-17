@@ -207,7 +207,7 @@ Two informational warnings, both transitive and not exploitable in this contract
 
 **Automated CI Gate (#299)**:
 Supply-chain security and dependency hygiene are now enforced automatically in `.github/workflows/ci.yml` under the `smart-contracts` job:
-- **`cargo audit`**: Installed via `taiki-e/install-action@v2` and runs on every push and pull request touching `main`/`master`. Fails CI immediately if any vulnerability advisory is detected in `contracts/Cargo.lock`. Configured in `contracts/.cargo/audit.toml` with the informational unmaintained advisory for `paste 1.0.15` documented and ignored.
+- **`cargo audit`**: Installed via `taiki-e/install-action` (pinned to a commit SHA, v2.87.29) and runs on every push and pull request touching `main`/`master`. Fails CI immediately if any vulnerability advisory is detected in `contracts/Cargo.lock`. Configured in `contracts/.cargo/audit.toml` with the informational unmaintained advisory for `paste 1.0.15` documented and ignored.
 - **`cargo deny`**: Runs `cargo deny check` against `contracts/deny.toml` to enforce repository license compliance, disallow banned/wildcard dependencies, monitor security advisories, and verify crate sources strictly originate from `crates.io`.
 - **Dependabot**: `.github/dependabot.yml` includes the `cargo` ecosystem for `/contracts` to open automated weekly PRs for dependency updates.
 - **Lockfile Review**: `contracts/Cargo.lock` changes are explicitly assigned to `@soumen0818` in `.github/CODEOWNERS`.

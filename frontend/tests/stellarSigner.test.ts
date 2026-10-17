@@ -57,7 +57,7 @@ describe('createKeypairSigner', () => {
         expect(signed.signatures).toHaveLength(1);
 
         const hash = signed.hash();
-        expect(keypair.verify(hash, signed.signatures[0].signature())).toBe(true);
+        expect(keypair.verify(hash, signed.signatures[0].signature.value)).toBe(true);
     });
 
     it('signs for the network it is told, not one it assumed', async () => {
@@ -77,7 +77,9 @@ describe('createKeypairSigner', () => {
         // matched, the signer would be ignoring the passphrase — the bug that
         // gets a transaction signed against the wrong ledger.
         const sigOf = (value: string, passphrase: string) =>
-            TransactionBuilder.fromXDR(value, passphrase).signatures[0].signature().toString('hex');
+            Buffer.from(
+                TransactionBuilder.fromXDR(value, passphrase).signatures[0].signature.value,
+            ).toString('hex');
 
         expect(sigOf(onTestnet, NETWORK_PASSPHRASE)).not.toBe(
             sigOf(onPublic, 'Public Global Stellar Network ; September 2015'),

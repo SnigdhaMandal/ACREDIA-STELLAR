@@ -3,7 +3,7 @@ name = "acredia-stellar"
 version = "1.0.0"
 edition = "2021"
 publish = false
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [dependencies]
 soroban-sdk = "=26.0.1"

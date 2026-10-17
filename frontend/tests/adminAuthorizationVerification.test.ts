@@ -32,10 +32,10 @@ function xdrAuthEvent(wallet = walletAddress, contract = contractId) {
     });
 
     return new xdr.ContractEvent({
-        ext: new xdr.ExtensionPoint(0),
-        contractId: contractBytes as any,
-        type: xdr.ContractEventType.contract(),
-        body: new xdr.ContractEventBody(0, body as any),
+        ext: xdr.ExtensionPoint.v0(),
+        contractId: new xdr.ContractId(contractBytes),
+        type: xdr.ContractEventType.contract,
+        body: xdr.ContractEventBody.v0(body),
     }) as any;
 }
 

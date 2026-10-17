@@ -170,7 +170,7 @@ function toU64ScVal(tokenId: string | number): xdr.ScVal {
     try {
         return nativeToScVal(BigInt(tokenId), { type: 'u64' });
     } catch {
-        return xdr.ScVal.scvU64(new xdr.Uint64(BigInt(tokenId)));
+        return xdr.ScVal.scvU64(xdr.Uint64(BigInt(tokenId)));
     }
 }
 

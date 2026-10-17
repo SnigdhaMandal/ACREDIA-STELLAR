@@ -68,26 +68,46 @@ function stubWalletModules() {
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 
+/** What the next import of the adapter will see from the mocked modules. */
+const mockEnv = {
+    networkPassphrase: TESTNET_PASSPHRASE,
+    walletConnectProjectId: null as string | null,
+};
+
 /**
- * Installs the mocks the adapter needs, optionally on a different network.
+ * Points the mocks at a different network or WalletConnect configuration.
  *
- * `@/lib/stellar` is mocked rather than imported: the real module constructs a
- * Stellar SDK RPC server at module scope, which drags in axios and fails
- * against the synthetic `window` below.
+ * Only updates {@link mockEnv}; the factories registered once in `beforeEach`
+ * read it when the adapter is next imported (after `vi.resetModules()`).
+ * Re-registering `vi.doMock` for an id that is already mocked does not
+ * reliably replace the earlier factory under Vitest 4, which made the
+ * network/WalletConnect tests below pass or fail at random.
  */
 function installMocks(
     networkPassphrase = TESTNET_PASSPHRASE,
     { walletConnectProjectId = null as string | null } = {},
 ) {
+    mockEnv.networkPassphrase = networkPassphrase;
+    mockEnv.walletConnectProjectId = walletConnectProjectId;
+}
+
+/**
+ * Registers the mocks the adapter needs. Called once per test.
+ *
+ * `@/lib/stellar` is mocked rather than imported: the real module constructs a
+ * Stellar SDK RPC server at module scope, which drags in axios and fails
+ * against the synthetic `window` below.
+ */
+function registerMocks() {
     vi.doMock(KIT_PATH, () => ({ StellarWalletsKit: kitMock }));
     stubWalletModules();
     vi.doMock('@/lib/stellar', () => ({
-        activeNetwork: { networkPassphrase, networkName: 'testnet' },
+        activeNetwork: { networkPassphrase: mockEnv.networkPassphrase, networkName: 'testnet' },
     }));
     vi.doMock('@/lib/runtimeConfig', () => ({
         runtimeConfig: {
             walletConnect: {
-                projectId: walletConnectProjectId,
+                projectId: mockEnv.walletConnectProjectId,
                 appName: 'Acredia',
                 appUrl: 'https://acredia.test',
             },
@@ -120,6 +140,7 @@ beforeEach(() => {
     kitMock = createKitMock();
     walletConnectFails = false;
     installMocks();
+    registerMocks();
 
     // jsdom is not configured for this suite (environment: 'node'), so stand
     // in the browser APIs the adapter and theme reader touch. `location` is

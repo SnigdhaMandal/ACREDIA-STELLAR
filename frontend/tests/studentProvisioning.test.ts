@@ -125,7 +125,7 @@ describe('wallet ownership verification', () => {
     const nonce = 'a'.repeat(64);
 
     function sign(message: string, signer = keypair): string {
-        return signer.sign(Buffer.from(message, 'utf8')).toString('base64');
+        return Buffer.from(signer.sign(Buffer.from(message, 'utf8'))).toString('base64');
     }
 
     it('accepts a genuine signature over the exact challenge', () => {
@@ -215,7 +215,7 @@ describe('wallet ownership verification', () => {
     it('round-trips a hex signature through verification', () => {
         const keypair = Keypair.random();
         const message = buildClaimMessage(keypair.publicKey(), 'nonce-hex-check');
-        const hexSignature = keypair.sign(Buffer.from(message, 'utf8')).toString('hex');
+        const hexSignature = Buffer.from(keypair.sign(Buffer.from(message, 'utf8'))).toString('hex');
 
         const normalized = normalizeSignedMessage(hexSignature);
         expect(normalized).not.toBeNull();

@@ -226,7 +226,7 @@ export function getSorobanTransactionResult(simResult: unknown): unknown {
             return scValToNative(scval);
         }
 
-        if (typeof rawResult === 'object' && (rawResult.switch || rawResult._switch)) {
+        if (xdr.ScVal.is(rawResult)) {
             return scValToNative(rawResult);
         }
 

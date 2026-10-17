@@ -81,6 +81,19 @@ function getTransactionStatus(transaction: unknown): string {
     return typeof status === 'string' ? status : '';
 }
 
+/**
+ * Reads an XDR member that older SDKs exposed as an accessor method
+ * (`event.body()`) and stellar-sdk 17 exposes as a plain field (`event.body`).
+ */
+function readMember(source: unknown, key: string): unknown {
+    if (!source || typeof source !== 'object') {
+        return undefined;
+    }
+
+    const member = (source as Record<string, unknown>)[key];
+    return typeof member === 'function' ? (member as () => unknown).call(source) : member;
+}
+
 function encodeContractAddress(contractAddress: unknown): string | null {
     if (!contractAddress) {
         return null;
@@ -103,19 +116,14 @@ function encodeContractAddress(contractAddress: unknown): string | null {
     }
 
     try {
-        const contractId =
-            typeof (contractAddress as { contractId?: unknown }).contractId === 'function'
-                ? (contractAddress as { contractId: () => unknown }).contractId()
-                : null;
+        const contractId = readMember(contractAddress, 'contractId');
 
         if (contractId) {
             return encodeContractAddress(contractId);
         }
 
-        const value =
-            typeof (contractAddress as { value?: unknown }).value === 'function'
-                ? (contractAddress as { value: () => unknown }).value()
-                : null;
+        // stellar-sdk 17's ContractId carries its 32 bytes on `.value`.
+        const value = readMember(contractAddress, 'value');
 
         if (value) {
             return encodeContractAddress(value);
@@ -145,32 +153,23 @@ function scValToComparableString(value: unknown): string | null {
 }
 
 function getEventBodyV0(event: unknown): unknown {
-    const body =
-        typeof (event as { body?: unknown }).body === 'function'
-            ? (event as { body: () => unknown }).body()
-            : (event as { body?: unknown }).body;
+    const body = readMember(event, 'body');
 
     if (!body) {
         return null;
     }
 
-    return typeof (body as { v0?: unknown }).v0 === 'function'
-        ? (body as { v0: () => unknown }).v0()
-        : ((body as { v0?: unknown }).v0 ?? body);
+    return readMember(body, 'v0') ?? body;
 }
 
 function readEventContractId(event: unknown): string | null {
-    const direct = (event as { contractId?: unknown }).contractId;
+    const direct = readMember(event, 'contractId');
 
     if (typeof direct === 'string') {
         return direct;
     }
 
-    if (typeof direct === 'function') {
-        return encodeContractAddress((event as { contractId: () => unknown }).contractId());
-    }
-
-    return null;
+    return encodeContractAddress(direct);
 }
 
 function readEventTopics(event: unknown): string[] {
@@ -181,11 +180,7 @@ function readEventTopics(event: unknown): string[] {
             .filter(Boolean);
     }
 
-    const bodyV0 = getEventBodyV0(event);
-    const topics =
-        bodyV0 && typeof (bodyV0 as { topics?: unknown }).topics === 'function'
-            ? (bodyV0 as { topics: () => unknown[] }).topics()
-            : null;
+    const topics = readMember(getEventBodyV0(event), 'topics');
 
     return Array.isArray(topics)
         ? topics
@@ -200,13 +195,7 @@ function readEventData(event: unknown): string | null {
         return scValToComparableString(plainData) ?? String(plainData);
     }
 
-    const bodyV0 = getEventBodyV0(event);
-    const data =
-        bodyV0 && typeof (bodyV0 as { data?: unknown }).data === 'function'
-            ? (bodyV0 as { data: () => unknown }).data()
-            : null;
-
-    return scValToComparableString(data);
+    return scValToComparableString(readMember(getEventBodyV0(event), 'data') ?? null);
 }
 
 function getContractEvents(transaction: unknown): unknown[] {
