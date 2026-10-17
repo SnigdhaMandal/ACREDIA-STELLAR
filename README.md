@@ -214,6 +214,7 @@ Acredia connects four roles around a single, shared source of truth. See the
 - **Complete Details**: View student information, institution, marks, and grades
 - **No Login Required**: Public verification page accessible to anyone
 - **Tamper-Proof**: Impossible to forge or modify credentials
+- **Embeddable Widget**: A "Verify with Acredia" button for careers pages and ATS platforms — see the [integration guide](docs/integrations/verify-widget.md)
 
 ### For Administrators
 
@@ -1336,6 +1337,7 @@ Deeper documentation lives under [`docs/`](docs/):
 - **[Architecture](docs/architecture.md)** — components, layers, and the issue / verify / revoke data flows.
 - **[Authentication & roles](docs/auth-flow.md)** — how sessions, role resolution, and route guards work.
 - **[Verifiable Credentials](docs/verifiable-credentials.md)** — the W3C VC / Open Badges 3.0 metadata schema, field mapping, and a third-party verification recipe.
+- **[Embeddable verify widget](docs/integrations/verify-widget.md)** — the partner integration guide: snippet, `data-token`, sizing and theming, what data the widget sends, the CSP a host site needs, and the widget's versioning and caching policy.
 - **[IPFS pin redundancy](docs/ops/pin-redundancy.md)** — the pin-keeper and the durability guarantee for issued credentials.
 - **[Operations runbook](docs/ops/runbook.md)** — on-call procedures and incident response.
 - **[Email configuration & deliverability](docs/ops/email-configuration.md)** — Supabase custom SMTP setup, sending limits, upgrade triggers, and fallback direct recovery links.

@@ -1,7 +1,12 @@
 import { Card } from '@/components/ui/card';
 import { Metadata } from 'next';
 import { getSiteUrl } from '@/lib/siteUrl';
-import { WIDGET_THEME_DEFAULTS, WIDGET_THEME_PROPERTIES } from '@/lib/widget/verifyWidget';
+import {
+    WIDGET_DOCS_URL,
+    WIDGET_SCRIPT_PATHS,
+    WIDGET_THEME_DEFAULTS,
+    WIDGET_THEME_PROPERTIES,
+} from '@/lib/widget/verifyWidget';
 
 /** Example values for the widget theming snippet, keyed by the hooks the widget reads. */
 const THEME_PROPERTY_EXAMPLES: Record<(typeof WIDGET_THEME_PROPERTIES)[number], string> = {
@@ -118,6 +123,16 @@ export default function ApiDocsPage() {
                         <p className="text-muted-foreground mb-4">
                             Drop a "Verify with Acredia" button directly into your website to allow your users to verify credentials seamlessly without leaving your page (opens a popup).
                         </p>
+                        <p className="text-muted-foreground mb-4">
+                            The{' '}
+                            <a
+                                href={WIDGET_DOCS_URL}
+                                className="font-medium text-foreground underline underline-offset-4"
+                            >
+                                integration guide
+                            </a>{' '}
+                            covers sizing, theming, exactly what data the widget sends, the Content Security Policy your site needs, and the versioning policy: <code>{WIDGET_SCRIPT_PATHS[0]}</code> only ever receives backwards-compatible changes, and a breaking change ships at a new versioned URL.
+                        </p>
 
                         <Card className="p-6">
                             <h3 className="text-lg font-medium mb-4">Quickstart</h3>
@@ -126,7 +141,7 @@ export default function ApiDocsPage() {
                                 <div>
                                     <p className="text-sm text-foreground font-semibold mb-2">1. Add the widget script to your page</p>
                                     <pre className="bg-[#1e1e1e] text-[#d4d4d4] p-3 rounded-md overflow-x-auto text-xs font-mono border">
-{`<script src="${siteUrl}/widget.js" async></script>`}
+{`<script src="${siteUrl}${WIDGET_SCRIPT_PATHS[0]}" async></script>`}
                                     </pre>
                                 </div>
                                 

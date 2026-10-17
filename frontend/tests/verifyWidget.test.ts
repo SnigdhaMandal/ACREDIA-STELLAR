@@ -1,8 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     buildVerifyWidgetScript,
+    WIDGET_CACHE_CONTROL,
+    WIDGET_DOCS_URL,
+    WIDGET_MAJOR_VERSION,
+    WIDGET_SCRIPT_PATHS,
     WIDGET_THEME_DEFAULTS,
     WIDGET_THEME_PROPERTIES,
 } from '../src/lib/widget/verifyWidget';
@@ -191,7 +195,7 @@ describe('served widget source', () => {
 
         // Only the SVG namespace and the attribution comment — no host to send verifiers to.
         expect(urls).toEqual([
-            'https://github.com/soumen0818/ACREDIA-STELLAR',
+            WIDGET_DOCS_URL,
             'http://www.w3.org/2000/svg',
         ]);
         expect(script).not.toMatch(/vercel\.app/);
@@ -351,9 +355,11 @@ describe('rendering', () => {
         expect(dom.host.shadowRoot?.children.filter((child) => child instanceof FakeElement)).toHaveLength(1);
     });
 
-    it('warns, without throwing, when the container is missing', () => {
+    it('is a silent no-op when the container is missing', () => {
+        // Sites often load the script on every page but place the container on few.
         expect(() => runWidget('https://acredia.io', createDom({ container: false }))).not.toThrow();
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('id="acredia-verify-widget"'));
+        expect(warnSpy).not.toHaveBeenCalled();
+        expect(errorSpy).not.toHaveBeenCalled();
     });
 
     it('styles through a constructable stylesheet in a shadow root', () => {
@@ -440,6 +446,20 @@ describe('GET /widget.js', () => {
         return { response: GET(), dynamic };
     }
 
+    it('serves byte-for-byte what /widget/v1.js serves, headers included', async () => {
+        vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://acredia.io');
+        vi.resetModules();
+        const alias = await import('../src/app/widget.js/route');
+        const versioned = await import('../src/app/widget/v1.js/route');
+        const [aliasResponse, versionedResponse] = [alias.GET(), versioned.GET()];
+
+        expect(versioned.dynamic).toBe('force-static');
+        expect(await aliasResponse.text()).toBe(await versionedResponse.text());
+        expect(Object.fromEntries(aliasResponse.headers)).toEqual(Object.fromEntries(versionedResponse.headers));
+        expect(versionedResponse.headers.get('x-acredia-widget-version')).toBe(String(WIDGET_MAJOR_VERSION));
+        expect(versionedResponse.headers.get('cache-control')).toBe(WIDGET_CACHE_CONTROL);
+    });
+
     it('serves JavaScript with the configured origin baked in', async () => {
         vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://acredia.io');
         const { response, dynamic } = await fetchWidget();
@@ -460,5 +480,58 @@ describe('GET /widget.js', () => {
 
         expect(body).toContain('"canonicalOrigin":null');
         expect(body).not.toContain('acredia.example');
+    });
+});
+
+describe('versioning contract (ACREDIA-STELLAR#305)', () => {
+    const repoRoot = path.resolve(__dirname, '../..');
+
+    it('has a route for every advertised path', () => {
+        for (const scriptPath of WIDGET_SCRIPT_PATHS) {
+            const routeFile = path.join(__dirname, '../src/app', scriptPath, 'route.ts');
+            expect(existsSync(routeFile), `${scriptPath} has no route at ${routeFile}`).toBe(true);
+        }
+    });
+
+    it('keeps the original /widget.js URL alive as an alias of the current major', () => {
+        // Removing it would break every embed made before versioning existed.
+        expect(WIDGET_SCRIPT_PATHS).toContain('/widget.js');
+        expect(WIDGET_SCRIPT_PATHS).toContain(`/widget/v${WIDGET_MAJOR_VERSION}.js`);
+    });
+
+    it('labels the served script with its major version', () => {
+        expect(buildVerifyWidgetScript(null).split('\n')[0]).toContain(`Acredia verify widget v${WIDGET_MAJOR_VERSION}`);
+    });
+
+    it('stays cacheable but never immutable, so fixes reach existing embeds', () => {
+        expect(WIDGET_CACHE_CONTROL).toMatch(/\bpublic\b/);
+        expect(WIDGET_CACHE_CONTROL).not.toMatch(/immutable/);
+        const maxAge = Number(WIDGET_CACHE_CONTROL.match(/max-age=(\d+)/)?.[1]);
+        expect(maxAge).toBeGreaterThan(0);
+        expect(maxAge).toBeLessThanOrEqual(3600);
+    });
+
+    describe('integration docs', () => {
+        const docsPath = path.join(repoRoot, 'docs/integrations/verify-widget.md');
+        const docs = existsSync(docsPath) ? readFileSync(docsPath, 'utf8') : '';
+
+        it('exist where the served script and README point', () => {
+            expect(existsSync(docsPath)).toBe(true);
+            expect(WIDGET_DOCS_URL.endsWith('/docs/integrations/verify-widget.md')).toBe(true);
+            expect(readFileSync(path.join(repoRoot, 'README.md'), 'utf8')).toContain(
+                'docs/integrations/verify-widget.md',
+            );
+        });
+
+        it('state the cache policy the server actually sends', () => {
+            expect(docs).toContain(WIDGET_CACHE_CONTROL);
+        });
+
+        it('document every served path and theming hook', () => {
+            for (const scriptPath of WIDGET_SCRIPT_PATHS) expect(docs).toContain(scriptPath);
+            for (const property of WIDGET_THEME_PROPERTIES) expect(docs).toContain(property);
+            expect(docs).toContain('data-token');
+            expect(docs).toContain('data-acredia-widget');
+        });
     });
 });
