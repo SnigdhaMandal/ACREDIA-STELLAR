@@ -117,6 +117,8 @@ test.describe('WCAG 2.1 AA accessibility audit', () => {
 
         await expectNoViolations(page, '/verify?token=1');
         await expectNoViolations(page, '/credentials/1');
+        // Where partners copy the embeddable verify widget from (ACREDIA-STELLAR#304).
+        await expectNoViolations(page, '/docs/api');
     });
 
     test('admin console, including the wallet gate', async ({ page }) => {
