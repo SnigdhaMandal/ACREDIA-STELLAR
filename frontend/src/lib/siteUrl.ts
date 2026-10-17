@@ -1,3 +1,6 @@
+/** The reserved, non-resolving host {@link getSiteUrl} returns when nothing is configured. */
+export const PLACEHOLDER_SITE_URL = 'https://acredia.example';
+
 /**
  * Resolves the canonical base URL for metadata, Open Graph previews, sitemaps, and robots.
  *
@@ -31,7 +34,30 @@ export function getSiteUrl(): string {
         return `https://${vercelUrl.trim()}`;
     }
 
-    return 'https://acredia.example';
+    return PLACEHOLDER_SITE_URL;
+}
+
+/**
+ * The canonical origin (scheme + host + port) this deployment is configured
+ * to serve, or null when there is none.
+ *
+ * Unlike {@link getSiteUrl}, this never returns the placeholder: callers that
+ * hand the origin to code we cannot update later — the embeddable verify
+ * widget runs on partner sites — need to know the value is real rather than
+ * receive a host that only *looks* like one.
+ */
+export function getConfiguredSiteOrigin(): string | null {
+    const siteUrl = getSiteUrl();
+    if (siteUrl === PLACEHOLDER_SITE_URL) {
+        return null;
+    }
+
+    try {
+        const url = new URL(siteUrl);
+        return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -44,6 +70,6 @@ export function getMetadataBase(): URL {
     try {
         return new URL(getSiteUrl());
     } catch {
-        return new URL('https://acredia.example');
+        return new URL(PLACEHOLDER_SITE_URL);
     }
 }

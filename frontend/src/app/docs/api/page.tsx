@@ -1,6 +1,16 @@
 import { Card } from '@/components/ui/card';
 import { Metadata } from 'next';
 import { getSiteUrl } from '@/lib/siteUrl';
+import { WIDGET_THEME_DEFAULTS, WIDGET_THEME_PROPERTIES } from '@/lib/widget/verifyWidget';
+
+/** Example values for the widget theming snippet, keyed by the hooks the widget reads. */
+const THEME_PROPERTY_EXAMPLES: Record<(typeof WIDGET_THEME_PROPERTIES)[number], string> = {
+    '--acredia-widget-bg': WIDGET_THEME_DEFAULTS.background,
+    '--acredia-widget-bg-hover': '#163a5f',
+    '--acredia-widget-fg': WIDGET_THEME_DEFAULTS.foreground,
+    '--acredia-widget-radius': '9999px',
+    '--acredia-widget-font': '"Inter", sans-serif',
+};
 
 export const metadata: Metadata = {
     title: 'API Documentation | Acredia',
@@ -116,7 +126,7 @@ export default function ApiDocsPage() {
                                 <div>
                                     <p className="text-sm text-foreground font-semibold mb-2">1. Add the widget script to your page</p>
                                     <pre className="bg-[#1e1e1e] text-[#d4d4d4] p-3 rounded-md overflow-x-auto text-xs font-mono border">
-{`<script src="${siteUrl}/widget.js" async defer></script>`}
+{`<script src="${siteUrl}/widget.js" async></script>`}
                                     </pre>
                                 </div>
                                 
@@ -128,18 +138,34 @@ export default function ApiDocsPage() {
                                     </pre>
                                 </div>
 
+                                <div>
+                                    <p className="text-sm text-foreground font-semibold mb-2">3. Optional: match your brand</p>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                        The button renders in its own shadow root, so your page&apos;s CSS cannot break it. Theme it with these custom properties instead; any you leave unset keep Acredia&apos;s defaults.
+                                    </p>
+                                    <pre className="bg-[#1e1e1e] text-[#d4d4d4] p-3 rounded-md overflow-x-auto text-xs font-mono border">
+{`#acredia-verify-widget {
+${WIDGET_THEME_PROPERTIES.map((property) => `  ${property}: ${THEME_PROPERTY_EXAMPLES[property]};`).join('\n')}
+}`}
+                                    </pre>
+                                </div>
+
+                                <p className="text-xs text-muted-foreground">
+                                    The script only ever links to the Acredia deployment it is served from. If it cannot determine that deployment, it renders nothing and logs an error to the browser console rather than linking anywhere else, and the container gets <code>data-acredia-widget=&quot;error&quot;</code>.
+                                </p>
+
                                 <div className="bg-secondary/30 p-4 rounded-md border flex items-center justify-between">
                                     <div className="text-sm">
                                         <p className="font-semibold">Result Preview</p>
                                         <p className="text-muted-foreground text-xs mt-1">What the button looks like on your site</p>
                                     </div>
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2.5 px-5 rounded-md shadow-sm transition-colors text-sm"
+                                    <span
+                                        aria-hidden="true"
+                                        className="inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-2.5 px-5 rounded-md shadow-sm transition-colors text-sm"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                                         Verify with Acredia
-                                    </button>
+                                    </span>
                                 </div>
                             </div>
                         </Card>
