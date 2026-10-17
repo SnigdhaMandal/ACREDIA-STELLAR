@@ -12,7 +12,7 @@ export async function processEvent(event: rpc.Api.EventResponse, supabase: Supab
     // need to guard the event kind here.
     if (event.type !== 'contract') return;
 
-    // In @stellar/stellar-sdk v15, getEvents already decodes topic/value to
+    // Since @stellar/stellar-sdk v15, getEvents already decodes topic/value to
     // xdr.ScVal — pass them straight to scValToNative (no base64 fromXDR).
     const topics = event.topic.map((val) => scValToNative(val));
     const eventName = topics[0]?.toString();

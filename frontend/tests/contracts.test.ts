@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import { nativeToScVal } from '@stellar/stellar-sdk';
 import {
     batchCredentialInputToScVal,
     describeBatchRowError,
@@ -49,12 +49,12 @@ describe('batchCredentialInputToScVal', () => {
             ipfsUri: 'ipfs://test',
         });
 
-        expect(scVal.switch()).toEqual(xdr.ScValType.scvMap());
-        const entries = scVal.map() ?? [];
+        expect(scVal.type).toBe('scvMap');
+        const entries = scVal.type === 'scvMap' ? (scVal.map ?? []) : [];
         const keys = entries.map((entry) => {
-            const key = entry.key();
-            expect(key.switch()).toEqual(xdr.ScValType.scvSymbol());
-            return key.sym().toString();
+            const key = entry.key;
+            expect(key.type).toBe('scvSymbol');
+            return key.type === 'scvSymbol' ? key.sym.toString() : '';
         });
 
         expect(keys).toEqual(['credential_hash', 'ipfs_uri', 'student']);

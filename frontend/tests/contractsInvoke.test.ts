@@ -133,11 +133,11 @@ describe('invokeContractMethod with a keypair signer', () => {
         // `sendTransaction`'s stub takes no declared parameters, so the recorded
         // call is typed as an empty tuple; read it as unknown[] to inspect it.
         const [submitted] = rpc.sendTransaction.mock.calls[0] as unknown as [
-            { signatures: Array<{ signature: () => Buffer }>; hash: () => Buffer },
+            { signatures: Array<{ signature: { value: Uint8Array } }>; hash: () => Uint8Array },
         ];
         expect(submitted.signatures).toHaveLength(1);
         expect(
-            issuerKeypair.verify(submitted.hash(), submitted.signatures[0].signature()),
+            issuerKeypair.verify(submitted.hash(), submitted.signatures[0].signature.value),
         ).toBe(true);
     });
 
@@ -288,10 +288,10 @@ describe('invokeContractMethod with a keypair signer', () => {
         // name and argument survived transaction construction.
         const invokeArgs = (
             simulated.operations[0] as unknown as {
-                func: { invokeContract: () => xdr.InvokeContractArgs };
+                func: { invokeContract: xdr.InvokeContractArgs };
             }
-        ).func.invokeContract();
-        expect(invokeArgs.functionName().toString()).toBe('revoke_credential');
-        expect(invokeArgs.args()).toHaveLength(1);
+        ).func.invokeContract;
+        expect(invokeArgs.functionName.toString()).toBe('revoke_credential');
+        expect(invokeArgs.args).toHaveLength(1);
     });
 });

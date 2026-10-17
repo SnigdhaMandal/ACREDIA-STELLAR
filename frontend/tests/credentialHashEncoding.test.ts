@@ -25,8 +25,8 @@ describe('credential hash Stellar encoding', () => {
     it('builds a 32-byte ScVal for the Soroban ABI', () => {
         const scVal = credentialHashHexToScVal(hash);
 
-        expect(scVal.switch().name).toBe('scvBytes');
-        expect(scVal.bytes()).toHaveLength(32);
+        expect(scVal.type).toBe('scvBytes');
+        expect(scVal.type === 'scvBytes' ? scVal.bytes.value : null).toHaveLength(32);
     });
 
     it('rejects non-SHA-256 hash values', () => {
