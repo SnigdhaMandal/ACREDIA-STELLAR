@@ -1,7 +1,10 @@
 /**
  * The embeddable "Verify with Acredia" widget (ACREDIA-STELLAR#304).
  *
- * Served to third-party sites at `/widget.js` by `src/app/widget.js/route.ts`.
+ * Served to third-party sites at `/widget/v1.js` and its permanent alias
+ * `/widget.js` (see {@link WIDGET_SCRIPT_PATHS}). Partner-facing docs, including
+ * the versioning and caching policy: docs/integrations/verify-widget.md.
+ *
  * It is the least controllable code Acredia ships — it runs on pages we do not
  * own and cannot update once a partner has copied the tag — so it is built to
  * fail closed:
@@ -17,9 +20,37 @@
  *
  * Partner usage (see /docs/api#embeddable-widget):
  *
- *     <script src="https://<acredia-host>/widget.js" async></script>
+ *     <script src="https://<acredia-host>/widget/v1.js" async></script>
  *     <div id="acredia-verify-widget" data-token="42"></div>
+ *
+ * Everything a partner can observe is public API under the v1 contract: the
+ * container id, `data-token`, the `--acredia-widget-*` properties, the
+ * `data-acredia-widget` state attribute, and the link it renders. Changing
+ * any of those incompatibly means a new major version at a new path — never
+ * an edit to v1. See the policy in the integration docs.
  */
+
+/** The widget's major version. Bumped only for a breaking change, alongside a new path. */
+export const WIDGET_MAJOR_VERSION = 1;
+
+/**
+ * Every URL the current major version is served at. `/widget.js` is the
+ * original, unversioned URL already embedded on partner sites; it stays
+ * pinned to v1 forever rather than following future majors.
+ */
+export const WIDGET_SCRIPT_PATHS = ['/widget/v1.js', '/widget.js'] as const;
+
+/** Integration docs, linked from the served script so whoever finds it in a page knows what it is. */
+export const WIDGET_DOCS_URL =
+    'https://github.com/soumen0818/ACREDIA-STELLAR/blob/main/docs/integrations/verify-widget.md';
+
+/**
+ * Partners hot-link a stable URL, so within a major version fixes ship in
+ * place: an hour of freshness, then up to a day of serving the cached copy
+ * while revalidating in the background. Not `immutable`, and no content hash
+ * in the URL — that would strand every existing embed on the old code.
+ */
+export const WIDGET_CACHE_CONTROL = 'public, max-age=3600, stale-while-revalidate=86400';
 
 /** Design-system values the widget defaults to; partners override them via CSS custom properties. */
 export const WIDGET_THEME_DEFAULTS = {
@@ -203,13 +234,9 @@ export function installVerifyWidget(win: Window, doc: Document, config: VerifyWi
 
     function render() {
         const container = doc.getElementById(CONTAINER_ID);
-        if (!container) {
-            // eslint-disable-next-line no-console -- deliberate: the partner's console is the only place a broken embed can be reported.
-            console.warn(
-                LOG_PREFIX + 'No element with id="' + CONTAINER_ID + '" was found, so no button was rendered.',
-            );
-            return;
-        }
+        // Silent by design: sites commonly load the script on every page (e.g.
+        // through a tag manager) but place the container on only some of them.
+        if (!container) return;
         // Script included twice: the first copy already rendered.
         if (container.getAttribute(STATE_ATTRIBUTE)) return;
 
@@ -272,7 +299,7 @@ export function installVerifyWidget(win: Window, doc: Document, config: VerifyWi
 }
 
 /**
- * The complete `/widget.js` source, with the canonical origin baked in.
+ * The complete widget script, with the canonical origin baked in.
  *
  * `canonicalOrigin` is null when the deployment has none configured; the
  * script then relies on the origin it is served from.
@@ -285,8 +312,27 @@ export function buildVerifyWidgetScript(canonicalOrigin: string | null): string 
         .replace(/\u2029/g, '\\u2029');
 
     return [
-        '/*! Acredia verify widget — https://github.com/soumen0818/ACREDIA-STELLAR */',
+        `/*! Acredia verify widget v${WIDGET_MAJOR_VERSION} — ${WIDGET_DOCS_URL} */`,
         `;(${installVerifyWidget.toString()})(window, document, ${serializedConfig});`,
         '',
     ].join('\n');
+}
+
+/**
+ * The HTTP response for every path in {@link WIDGET_SCRIPT_PATHS}, so the
+ * versioned URL and its alias can never drift apart.
+ */
+export function verifyWidgetResponse(canonicalOrigin: string | null): Response {
+    return new Response(buildVerifyWidgetScript(canonicalOrigin), {
+        headers: {
+            'Content-Type': 'text/javascript; charset=utf-8',
+            'Cache-Control': WIDGET_CACHE_CONTROL,
+            // Explicitly loadable from any site, including ones that send
+            // Cross-Origin-Embedder-Policy or use crossorigin="anonymous".
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            'Access-Control-Allow-Origin': '*',
+            // Lets a partner (or support) check which major a page is running.
+            'X-Acredia-Widget-Version': String(WIDGET_MAJOR_VERSION),
+        },
+    });
 }

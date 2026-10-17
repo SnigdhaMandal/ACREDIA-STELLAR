@@ -1,27 +1,20 @@
 import { getConfiguredSiteOrigin } from '@/lib/siteUrl';
-import { buildVerifyWidgetScript } from '@/lib/widget/verifyWidget';
+import { verifyWidgetResponse } from '@/lib/widget/verifyWidget';
 
 /**
- * Serves the embeddable verify widget (ACREDIA-STELLAR#304).
+ * Serves the embeddable verify widget at its original, unversioned URL
+ * (ACREDIA-STELLAR#304, #305).
+ *
+ * A permanent alias of `/widget/v1.js`: partners embedded this URL before
+ * versioning existed, so it stays on v1 forever — a future v2 ships at
+ * `/widget/v2.js` and never here. See docs/integrations/verify-widget.md.
  *
  * Generated rather than shipped from `public/` so the canonical origin comes
- * from `src/lib/siteUrl.ts` — one source of truth, no host literal in a static
- * file. Rendered once at build time, which is when NEXT_PUBLIC_SITE_URL /
- * VERCEL_URL are known.
+ * from `src/lib/siteUrl.ts`. Rendered once at build time, which is when
+ * NEXT_PUBLIC_SITE_URL / VERCEL_URL are known.
  */
 export const dynamic = 'force-static';
 
 export function GET(): Response {
-    return new Response(buildVerifyWidgetScript(getConfiguredSiteOrigin()), {
-        headers: {
-            'Content-Type': 'text/javascript; charset=utf-8',
-            // Partners embed this URL permanently; keep the cache short so a
-            // fix reaches every embed within the hour.
-            'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
-            // Explicitly loadable from any site, including ones that send
-            // Cross-Origin-Embedder-Policy or use crossorigin="anonymous".
-            'Cross-Origin-Resource-Policy': 'cross-origin',
-            'Access-Control-Allow-Origin': '*',
-        },
-    });
+    return verifyWidgetResponse(getConfiguredSiteOrigin());
 }
